@@ -11,7 +11,7 @@ changes that add a toolchain or framework will be asked to justify themselves.
   "improve" adjacent code.
 - **Every toggle must cleanly revert.** When a user switches a toggle off, the
   page must return to its original state without a reload. Look at any existing
-  content script (`strip-tab-title-prefix.js` is a short example) — they all
+  content script (`toggles/strip-tab-title-prefix.js` is a short example) — they all
   have an explicit restore path. This is a hard requirement, not a nicety.
 - **Match the existing style.** 2-space indent, single quotes, semicolons, and
   a top-of-file comment explaining *why* the approach works (not just what it
@@ -23,7 +23,7 @@ changes that add a toolchain or framework will be asked to justify themselves.
   `FEATURES` array (`id`, `name`, `description`, `defaultEnabled`, and an
   optional network `rule`). `popup.js` renders the switch list from this
   automatically — you never edit the popup.
-- **Content scripts** (`<feature>.js`) are plain IIFEs (not ES modules — they
+- **Content scripts** (`toggles/<feature>.js`) are plain IIFEs (not ES modules — they
   can't `import`). They read `chrome.storage.local`'s `toggles` object, apply
   on enable, revert on disable, and re-sync on `chrome.storage.onChanged`.
 - **`background.js`** turns any feature with a `rule` into a dynamic
@@ -43,15 +43,16 @@ changes that add a toolchain or framework will be asked to justify themselves.
      defaultEnabled: false,     // be conservative; most start off
    },
    ```
-2. Create `my-feature.js` following the existing pattern. Copy a small one
-   (e.g. `strip-tab-title-prefix.js`) and keep its shape:
+2. Create `toggles/my-feature.js` following the existing pattern. Copy a small
+   one (e.g. `toggles/strip-tab-title-prefix.js`) and keep its shape:
    - wrap everything in `(() => { ... })()`
    - `const FEATURE_ID = 'my-feature';` and `const STORAGE_KEY = 'toggles';`
    - a `syncFromStorage()` that reads the toggle, no-ops if unchanged, and
      applies **or** reverts
    - a `chrome.storage.onChanged` listener that re-runs `syncFromStorage()`
    - call `syncFromStorage()` once at the end
-3. Register the file in `manifest.json` under `content_scripts`. Add it to the
+3. Register the file (as `toggles/my-feature.js`) in `manifest.json` under
+   `content_scripts`. Add it to the
    default array, unless it needs the page's own JS context
    (`world: "MAIN"` array) or must run in subframes (`all_frames` array).
 
@@ -80,7 +81,7 @@ You need access to a Tulip instance to test against real pages.
 Quick local sanity checks (no dependencies needed):
 
 ```sh
-node --check my-feature.js
+node --check toggles/my-feature.js
 node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8'))"
 node --check features.js
 ```

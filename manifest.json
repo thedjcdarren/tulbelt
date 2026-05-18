@@ -19,18 +19,18 @@
   "content_scripts": [
     {
       "matches": ["*://*.tulip.co/*"],
-      "js": ["content.js", "auto-snapshot.js", "hide-legacy.js", "disable-tooltips.js", "hide-view-only-triggers.js", "move-variables-to-toolbar.js", "hide-app-editor-chrome.js", "compact-app-editor-header.js", "dark-mode.js", "strip-tab-title-prefix.js", "filters-builder.js", "expression-editor-fuzzy.js"],
+      "js": ["toggles/reorder-row-buttons.js", "toggles/auto-snapshot.js", "toggles/hide-legacy.js", "toggles/disable-tooltips.js", "toggles/hide-view-only-triggers.js", "toggles/move-variables-to-toolbar.js", "toggles/hide-app-editor-chrome.js", "toggles/compact-app-editor-header.js", "toggles/dark-mode.js", "toggles/strip-tab-title-prefix.js", "toggles/filters-builder.js", "toggles/expression-editor-fuzzy.js"],
       "run_at": "document_idle"
     },
     {
       "matches": ["*://*.tulip.co/*"],
-      "js": ["context-menu-copy-cut.js"],
+      "js": ["toggles/context-menu-copy-cut.js"],
       "run_at": "document_idle",
       "all_frames": true
     },
     {
       "matches": ["*://*.tulip.co/*"],
-      "js": ["expression-editor-fuzzy-main.js"],
+      "js": ["toggles/expression-editor-fuzzy-main.js"],
       "run_at": "document_idle",
       "world": "MAIN"
     }

@@ -44,8 +44,8 @@ every toggle is designed to cleanly revert when switched back off.
   feature; no per-feature popup code.
 - `background.js` — service worker. Syncs `declarativeNetRequest` rules for
   features that declare a network `rule` (e.g. URL redirects).
-- `<feature>.js` — one content script per DOM/behavior tweak. Each reads its
-  on/off state from `chrome.storage.local` and applies or reverts itself.
+- `toggles/<feature>.js` — one content script per DOM/behavior tweak. Each reads
+  its on/off state from `chrome.storage.local` and applies or reverts itself.
 - `docs/` — design notes for the more involved features.
 
 ## Contributing

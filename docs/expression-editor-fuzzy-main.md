@@ -1,6 +1,6 @@
 # Expression editor fuzzy search (`expression-editor-fuzzy-main.js`)
 
-This document explains how the main-world half of Tulbelt’s expression-editor fuzzy search works. The implementation lives in `expression-editor-fuzzy-main.js`; the isolated-world toggle bridge is in `expression-editor-fuzzy.js`.
+This document explains how the main-world half of Tulbelt’s expression-editor fuzzy search works. The implementation lives in `toggles/expression-editor-fuzzy-main.js`; the isolated-world toggle bridge is in `toggles/expression-editor-fuzzy.js`.
 
 ## Purpose
 
@@ -181,8 +181,8 @@ Does **not** change the UI (no overlay, no list hide). Logs editor text, query r
 
 ## Related files
 
-- `expression-editor-fuzzy-main.js` — main-world implementation
-- `expression-editor-fuzzy.js` — isolated-world storage → attribute bridge
+- `toggles/expression-editor-fuzzy-main.js` — main-world implementation
+- `toggles/expression-editor-fuzzy.js` — isolated-world storage → attribute bridge
 - `manifest.json` — `world: "MAIN"` content script entry
 - `features.js` — feature id `expression-editor-fuzzy` for popup toggles
 
