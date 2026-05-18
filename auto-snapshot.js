@@ -1,5 +1,5 @@
 // In the tulip.co app editor, count time the user is actively editing each
-// app and, every 30 active minutes, drive the native snapshot flow:
+// app and, every ACTIVE_THRESHOLD_MS of active time, drive the native snapshot flow:
 // click the snapshot button, fill the description, click Create snapshot.
 //
 // "Active" means: tab visible, URL still on /apps/<id>/versions/..., and an
@@ -12,7 +12,7 @@ const TOGGLES_KEY = 'toggles';
 const STATE_KEY = 'autoSnapshotState';
 const URL_PATTERN =
   /^https?:\/\/([^.]+)\.tulip\.co\/apps\/([^/]+)\/versions(\/|$)/;
-const ACTIVE_THRESHOLD_MS = 30 * 60 * 1000;
+const ACTIVE_THRESHOLD_MS = 15 * 60 * 1000;
 const IDLE_AFTER_MS = 60 * 1000;
 const TICK_MS = 1000;
 const PERSIST_EVERY_MS = 10 * 1000;
@@ -34,25 +34,66 @@ let tickHandle = null;
 let urlPollHandle = null;
 let snapshotInProgress = false;
 
+/** MV3 content scripts usually expose `chrome.storage`; Firefox / some builds use `browser`. */
+function storageLocal() {
+  return (
+    globalThis.chrome?.storage?.local ??
+    globalThis.browser?.storage?.local ??
+    null
+  );
+}
+
+// When the extension is reloaded/updated, content scripts in already-open
+// tabs become orphaned: `chrome.runtime.id` goes undefined and any chrome.*
+// call rejects with "Extension context invalidated." Detect this so we can
+// shut down cleanly instead of spamming unhandled rejections from `tick`.
+function isContextValid() {
+  try {
+    return Boolean(
+      globalThis.chrome?.runtime?.id ?? globalThis.browser?.runtime?.id,
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isContextInvalidatedError(err) {
+  return /Extension context invalidated|Extension manifest must request permission/i.test(
+    err?.message ?? '',
+  );
+}
+
 function getAppId(url = location.href) {
   const m = URL_PATTERN.exec(url);
   return m ? m[2] : null;
 }
 
 async function loadState() {
-  const { [STATE_KEY]: stored = {} } =
-    await chrome.storage.local.get(STATE_KEY);
-  activeMs = stored;
+  const local = storageLocal();
+  if (!local || !isContextValid()) return;
+  try {
+    const { [STATE_KEY]: stored = {} } = await local.get(STATE_KEY);
+    activeMs = stored;
+  } catch (err) {
+    if (isContextInvalidatedError(err)) stop();
+    else throw err;
+  }
 }
 
 // Re-read before writing so two tabs on different apps don't clobber each
 // other's counters. Only this app's slot changes.
 async function persistAppState(appId) {
   if (!appId) return;
-  const { [STATE_KEY]: stored = {} } =
-    await chrome.storage.local.get(STATE_KEY);
-  stored[appId] = activeMs[appId] || 0;
-  await chrome.storage.local.set({ [STATE_KEY]: stored });
+  const local = storageLocal();
+  if (!local || !isContextValid()) return;
+  try {
+    const { [STATE_KEY]: stored = {} } = await local.get(STATE_KEY);
+    stored[appId] = activeMs[appId] || 0;
+    await local.set({ [STATE_KEY]: stored });
+  } catch (err) {
+    if (isContextInvalidatedError(err)) stop();
+    else throw err;
+  }
 }
 
 function markActivity() {
@@ -174,6 +215,10 @@ async function performSnapshot(appId) {
 }
 
 async function tick() {
+  if (!isContextValid()) {
+    stop();
+    return;
+  }
   if (snapshotInProgress) return;
   if (!currentAppId) return;
   if (!isActive()) return;
@@ -185,7 +230,7 @@ async function tick() {
   const now = Date.now();
   if (now - lastPersistAt >= PERSIST_EVERY_MS) {
     lastPersistAt = now;
-    persistAppState(currentAppId);
+    await persistAppState(currentAppId);
   }
 
   if (next >= ACTIVE_THRESHOLD_MS) {
@@ -209,7 +254,7 @@ function checkUrl() {
   const newAppId = getAppId();
   if (newAppId !== currentAppId) {
     // Persist the outgoing app before switching so its time isn't lost.
-    if (currentAppId) persistAppState(currentAppId);
+    if (currentAppId) void persistAppState(currentAppId).catch(() => {});
     currentAppId = newAppId;
     if (currentAppId) markActivity();
   }
@@ -246,13 +291,23 @@ function stop() {
   urlPollHandle = null;
   stopActivityListeners();
   hideOverlay();
-  if (currentAppId) persistAppState(currentAppId);
+  if (currentAppId) void persistAppState(currentAppId).catch(() => {});
   currentAppId = null;
 }
 
 async function syncFromStorage() {
-  const { [TOGGLES_KEY]: stored = {} } =
-    await chrome.storage.local.get(TOGGLES_KEY);
+  const local = storageLocal();
+  if (!local || !isContextValid()) return;
+  let stored;
+  try {
+    ({ [TOGGLES_KEY]: stored = {} } = await local.get(TOGGLES_KEY));
+  } catch (err) {
+    if (isContextInvalidatedError(err)) {
+      stop();
+      return;
+    }
+    throw err;
+  }
   const next = stored[FEATURE_ID] ?? false;
   if (next === enabled) return;
   enabled = next;
@@ -260,9 +315,16 @@ async function syncFromStorage() {
   else stop();
 }
 
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes[TOGGLES_KEY]) syncFromStorage();
-});
+function watchToggleChanges() {
+  const onChanged = globalThis.chrome?.storage?.onChanged;
+  const browserChanged = globalThis.browser?.storage?.onChanged;
+  const subscribe = onChanged ?? browserChanged;
+  if (!subscribe) return;
+  subscribe.addListener((changes, area) => {
+    if (area === 'local' && changes[TOGGLES_KEY]) void syncFromStorage();
+  });
+}
 
-syncFromStorage();
+void syncFromStorage().catch(() => {});
+watchToggleChanges();
 })();

@@ -2,6 +2,13 @@
 // declarativeNetRequest dynamic rule when its toggle is on. Add a new entry
 // to ship a new toggle — the popup and background sync read from here.
 
+// Old toggles merged into `compact-app-editor-header`. Kept here so getToggles
+// can migrate existing users once.
+export const LEGACY_COMPACT_APP_EDITOR_HEADER_IDS = [
+  'hide-app-editor-palette-icons',
+  'hide-subheader-workspace-label',
+];
+
 export const FEATURES = [
   {
     id: 'table-default-sort',
@@ -37,9 +44,9 @@ export const FEATURES = [
   },
   {
     id: 'auto-snapshot',
-    name: 'Auto-snapshot every 30 active min',
+    name: 'Auto-snapshot every 15 active min',
     description:
-      'In the app editor, track active editing time per app and automatically create a snapshot after each 30 minutes of activity.',
+      'In the app editor, track active editing time per app and automatically create a snapshot after each 15 minutes of activity.',
     defaultEnabled: false,
   },
   {
@@ -53,7 +60,7 @@ export const FEATURES = [
     id: 'disable-tooltips',
     name: 'Disable hover tooltips',
     description:
-      'Suppress the tooltip pop-ups that appear when hovering buttons and icons marked with data-toggle="tooltip".',
+      'Suppress the tooltip pop-ups on hover-only action buttons (cut, copy, etc.) while leaving toolbar button tooltips intact.',
     defaultEnabled: false,
   },
   {
@@ -61,6 +68,62 @@ export const FEATURES = [
     name: 'Hide view-only triggers',
     description:
       'In the trigger editor, hide locked/read-only triggers so only editable ones remain in the list.',
+    defaultEnabled: false,
+  },
+  {
+    id: 'move-variables-to-toolbar',
+    name: 'Move variables to toolbar',
+    description:
+      'Hide the Variables tile in the app editor context pane and mirror its Edit button into the top toolbar.',
+    defaultEnabled: false,
+  },
+  {
+    id: 'dark-mode',
+    name: 'Dark mode',
+    description:
+      'Apply a dark color scheme to tulip.co via filter-inversion (invert, contrast, brightness on the document; restored regions use the exact inverse so previews, canvas, images, and video stay hue-faithful). Targeted tweaks for specific surfaces are layered on top.',
+    defaultEnabled: false,
+  },
+  {
+    id: 'hide-app-editor-chrome',
+    name: 'Hide editor header & palette',
+    description:
+      'On app version editor pages only (`/w/…/apps/…/versions/…`), hide the site header, subheader row (breadcrumbs, Run/Publish), and Add/Icons palette.',
+    defaultEnabled: false,
+  },
+  {
+    id: 'compact-app-editor-header',
+    name: 'Compact app editor header',
+    description:
+      'In the app editor: hide the workspace name beside breadcrumbs; hide leading icons on palette buttons (Add, Icons, …, Forward/Back); tighten vertical padding on the subheader and palette rows.',
+    defaultEnabled: false,
+  },
+  {
+    id: 'context-menu-copy-cut',
+    name: 'Copy/Cut in widget menu',
+    description:
+      'In the app editor canvas widget context menu (Delete / Move To Front / Back), add Copy (Ctrl+C) and Cut (Ctrl+X) rows that trigger those shortcuts when clicked.',
+    defaultEnabled: true,
+  },
+  {
+    id: 'strip-tab-title-prefix',
+    name: 'Strip "Tulip | " from tab titles',
+    description:
+      'Remove the leading "Tulip | " prefix from browser tab/window titles so the page-specific name shows first.',
+    defaultEnabled: false,
+  },
+  {
+    id: 'filters-builder',
+    name: 'Visual filters editor',
+    description:
+      'On connector function pages, replace the JSON text box for the `filters` query parameter with a row-per-filter builder (field, function, arg). Variable pills round-trip as `$Name$` strings; type `$Name$` directly in an arg field to reference a variable.',
+    defaultEnabled: false,
+  },
+  {
+    id: 'expression-editor-fuzzy',
+    name: 'Fuzzy expression autocomplete',
+    description:
+      'In the formula/expression editor popup, replace the “starts with” filtering of suggestions with a case-insensitive substring (contains) match. Typing `User.` surfaces `@Table record.Current User.ID` etc. Arrow keys / Enter / click work as before.',
     defaultEnabled: false,
   },
 ];
@@ -78,7 +141,18 @@ export async function getToggles() {
     await chrome.storage.local.get(STORAGE_KEY);
   const result = {};
   for (const f of FEATURES) {
-    result[f.id] = stored[f.id] ?? f.defaultEnabled;
+    if (f.id === 'compact-app-editor-header') {
+      if (Object.prototype.hasOwnProperty.call(stored, f.id)) {
+        result[f.id] = stored[f.id];
+      } else {
+        const migrated = LEGACY_COMPACT_APP_EDITOR_HEADER_IDS.some(
+          (id) => stored[id] === true,
+        );
+        result[f.id] = migrated || f.defaultEnabled;
+      }
+    } else {
+      result[f.id] = stored[f.id] ?? f.defaultEnabled;
+    }
   }
   return result;
 }

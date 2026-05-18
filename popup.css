@@ -1,20 +1,28 @@
+/* Hairline dividers, inset hover pills in a padded list, and a single blue
+   accent. Light palette: #ffffff bg, #f7f7f7 hover, #e2e2e5 trim, #144A9E
+   accent. Dark mode keeps a dark surface with the same blue accent. */
 :root {
   color-scheme: light dark;
-  --bg: #fafafa;
-  --fg: #111;
-  --muted: #666;
-  --accent: #2563eb;
-  --border: #e5e5e5;
-  --hover: rgba(0, 0, 0, 0.035);
+  --bg: #ffffff;
+  --fg: #212e44;
+  --muted: #707a8a;
+  --hairline: #e2e2e5;
+  --hover: #f7f7f7;
+  --accent: #144a9e;
+  --track: #e2e2e5;
+  --knob: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #18181b;
-    --fg: #f4f4f5;
-    --muted: #a1a1aa;
-    --border: #27272a;
-    --hover: rgba(255, 255, 255, 0.04);
+    --bg: #1c2230;
+    --fg: #e8ebf1;
+    --muted: #8b94a7;
+    --hairline: rgba(255, 255, 255, 0.1);
+    --hover: rgba(255, 255, 255, 0.06);
+    --accent: #3b7cd6;
+    --track: rgba(255, 255, 255, 0.2);
+    --knob: #f4f4f5;
   }
 }
 
@@ -24,34 +32,73 @@
 
 body {
   margin: 0;
-  width: 320px;
+  width: 272px;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
     sans-serif;
   background: var(--bg);
   color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+  scrollbar-width: thin;
+  scrollbar-color: var(--track) transparent;
 }
 
+body::-webkit-scrollbar {
+  width: 8px;
+}
+body::-webkit-scrollbar-thumb {
+  background: var(--track);
+  border-radius: 999px;
+  border: 2px solid var(--bg);
+}
+
+/* Header: brand mark + identity block, mirroring the account card */
 header {
-  padding: 14px 16px 10px;
-  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.brand-mark {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.brand-text {
+  min-width: 0;
 }
 
 header h1 {
   margin: 0;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
+  line-height: 1.25;
   letter-spacing: -0.01em;
 }
 
 header .subtitle {
-  margin: 2px 0 0;
-  font-size: 11px;
+  margin: 1px 0 0;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   color: var(--muted);
 }
 
+/* Toggle list: inset hover pills, no per-row borders */
 ul#toggles {
   list-style: none;
-  padding: 4px 0;
+  padding: 5px;
   margin: 0;
 }
 
@@ -59,37 +106,54 @@ ul#toggles {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 11px 16px;
+  gap: 10px;
+  padding: 7px 9px;
+  border-radius: 7px;
   cursor: pointer;
+  transition: background 0.12s ease;
 }
 
-.feature label:hover {
+.feature label:hover,
+.feature label:focus-within {
   background: var(--hover);
 }
 
 .feature-text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
   min-width: 0;
 }
 
 .feature-name {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 500;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .feature-desc {
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--muted);
   line-height: 1.4;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.18s ease, opacity 0.18s ease, margin-top 0.18s ease;
+}
+
+.feature label:hover .feature-desc,
+.feature label:focus-within .feature-desc {
+  max-height: 80px;
+  opacity: 1;
+  margin-top: 3px;
 }
 
 .switch {
   position: relative;
-  width: 34px;
-  height: 20px;
+  width: 26px;
+  height: 15px;
   flex-shrink: 0;
 }
 
@@ -102,7 +166,7 @@ ul#toggles {
 .slider {
   position: absolute;
   inset: 0;
-  background: #c8c8cc;
+  background: var(--track);
   border-radius: 999px;
   transition: background 0.15s ease;
 }
@@ -112,12 +176,12 @@ ul#toggles {
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 16px;
-  height: 16px;
-  background: #fff;
+  width: 11px;
+  height: 11px;
+  background: var(--knob);
   border-radius: 50%;
   transition: transform 0.15s ease;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.25);
 }
 
 .switch input:checked + .slider {
@@ -125,7 +189,7 @@ ul#toggles {
 }
 
 .switch input:checked + .slider::before {
-  transform: translateX(14px);
+  transform: translateX(11px);
 }
 
 .switch input:focus-visible + .slider {

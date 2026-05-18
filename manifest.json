@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Tulbelt",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Quality-of-life toggles for tulip.co.",
   "permissions": [
     "declarativeNetRequestWithHostAccess",
@@ -19,8 +19,20 @@
   "content_scripts": [
     {
       "matches": ["*://*.tulip.co/*"],
-      "js": ["content.js", "auto-snapshot.js", "hide-legacy.js", "disable-tooltips.js", "hide-view-only-triggers.js"],
+      "js": ["content.js", "auto-snapshot.js", "hide-legacy.js", "disable-tooltips.js", "hide-view-only-triggers.js", "move-variables-to-toolbar.js", "hide-app-editor-chrome.js", "compact-app-editor-header.js", "dark-mode.js", "strip-tab-title-prefix.js", "filters-builder.js", "expression-editor-fuzzy.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://*.tulip.co/*"],
+      "js": ["context-menu-copy-cut.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    },
+    {
+      "matches": ["*://*.tulip.co/*"],
+      "js": ["expression-editor-fuzzy-main.js"],
+      "run_at": "document_idle",
+      "world": "MAIN"
     }
   ],
   "action": {
