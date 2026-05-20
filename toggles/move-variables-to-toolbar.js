@@ -16,7 +16,12 @@ const TILE_SELECTOR = '.context-pane-tile';
 const TILE_LABEL = 'Variables';
 const SOURCE_BUTTON_SELECTOR = '#app-context-pane-variables';
 const TAB_SELECTOR = '[data-testid="context-pane-tab-process"]';
-const TOOLBAR_ANCHOR_SELECTOR = '#app-editor-translation';
+const TOOLBAR_ANCHOR_SELECTORS = [
+  '#app-editor-translation',
+  '#app-editor-snapshot',
+];
+const TRANSLATION_DROPDOWN_SELECTOR =
+  '[data-testid="translationTargetLocalDropdown"]';
 const WAIT_FOR_SOURCE_MS = 2000;
 
 // Static copy of the variables glyph from the original button. Keeping it
@@ -89,21 +94,17 @@ async function openVariables() {
   source?.click();
 }
 
-function ensureClone() {
-  if (document.querySelector(`[${CLONE_MARK}]`)) return;
-  const anchor = document.querySelector(TOOLBAR_ANCHOR_SELECTOR);
-  if (!anchor) return;
-  const anchorWrap = anchor.parentElement;
-  if (!anchorWrap?.parentElement) return;
-
-  // Mirror the neighboring wrapper + button so spacing, styled-component class
-  // hashes, and Tulip's tooltip hook-ups (data-istarget) all carry over.
-  const wrap = document.createElement(anchorWrap.tagName);
-  for (const { name, value } of anchorWrap.attributes) {
-    wrap.setAttribute(name, value);
+function findToolbarAnchor() {
+  for (const selector of TOOLBAR_ANCHOR_SELECTORS) {
+    const el = document.querySelector(selector);
+    if (el) return { el, mode: 'wrapped' };
   }
-  wrap.setAttribute(CLONE_MARK, 'true');
+  const translation = document.querySelector(TRANSLATION_DROPDOWN_SELECTOR);
+  if (translation) return { el: translation, mode: 'after-translation' };
+  return null;
+}
 
+function buildVariablesButton(anchor) {
   const btn = document.createElement('button');
   btn.className = anchor.className;
   btn.setAttribute('type', 'button');
@@ -118,7 +119,44 @@ function ensureClone() {
     e.stopPropagation();
     openVariables();
   });
+  return btn;
+}
 
+function ensureClone() {
+  if (document.querySelector(`[${CLONE_MARK}]`)) return;
+  const found = findToolbarAnchor();
+  if (!found) return;
+  const { el: anchor, mode } = found;
+  const btn = buildVariablesButton(anchor);
+
+  if (mode === 'after-translation') {
+    // Newer toolbars expose translation as a bare button (no sibling wrap).
+    const templateWrap =
+      document.querySelector('#app-editor-snapshot')?.parentElement ||
+      anchor.parentElement?.querySelector('[data-istarget]');
+    const wrap = document.createElement(templateWrap?.tagName || 'div');
+    if (templateWrap) {
+      for (const { name, value } of templateWrap.attributes) {
+        wrap.setAttribute(name, value);
+      }
+    }
+    wrap.setAttribute(CLONE_MARK, 'true');
+    wrap.setAttribute('data-istarget', 'true');
+    wrap.appendChild(btn);
+    anchor.insertAdjacentElement('afterend', wrap);
+    return;
+  }
+
+  const anchorWrap = anchor.parentElement;
+  if (!anchorWrap?.parentElement) return;
+
+  // Mirror the neighboring wrapper + button so spacing, styled-component class
+  // hashes, and Tulip's tooltip hook-ups (data-istarget) all carry over.
+  const wrap = document.createElement(anchorWrap.tagName);
+  for (const { name, value } of anchorWrap.attributes) {
+    wrap.setAttribute(name, value);
+  }
+  wrap.setAttribute(CLONE_MARK, 'true');
   wrap.appendChild(btn);
   anchorWrap.parentElement.insertBefore(wrap, anchorWrap);
 }
@@ -142,13 +180,21 @@ function apply() {
   ensureClone();
 }
 
+function touchesToolbar(node) {
+  if (node.matches?.(TRANSLATION_DROPDOWN_SELECTOR)) return true;
+  if (node.querySelector?.(TRANSLATION_DROPDOWN_SELECTOR)) return true;
+  for (const selector of TOOLBAR_ANCHOR_SELECTORS) {
+    if (node.matches?.(selector) || node.querySelector?.(selector)) return true;
+  }
+  return false;
+}
+
 function touchesTarget(node) {
   if (!(node instanceof Element)) return false;
   return (
     node.matches?.(TILE_SELECTOR) ||
     node.querySelector?.(TILE_SELECTOR) ||
-    node.matches?.(TOOLBAR_ANCHOR_SELECTOR) ||
-    node.querySelector?.(TOOLBAR_ANCHOR_SELECTOR)
+    touchesToolbar(node)
   );
 }
 
