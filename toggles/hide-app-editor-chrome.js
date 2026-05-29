@@ -1,4 +1,4 @@
-// Hides editor chrome only on app version editor URLs (`/w/…/apps/…/versions/…`):
+// Hides editor chrome only on app version editor URLs (`/w/…/apps/…/versions/…` or `/apps/…/versions/…`):
 // `[data-testid="tulip-header"]`, subheader row, and Add/Icons palette strip.
 
 (() => {
@@ -6,8 +6,8 @@ const FEATURE_ID = 'hide-app-editor-chrome';
 const STORAGE_KEY = 'toggles';
 const STYLE_ID = 'tulbelt-hide-app-editor-chrome-styles';
 const MARK = 'data-tulbelt-hide-app-editor-chrome';
-/** App version editor: /w/<ws>/apps/<appId>/versions/<versionId> */
-const APP_EDITOR_PATH_RE = /^\/w\/[^/]+\/apps\/[^/]+\/versions\/[^/]+/;
+/** App version editor: /w/<ws>/apps/<appId>/versions/<versionId> or /apps/<appId>/versions/<versionId> */
+const APP_EDITOR_PATH_RE = /^(?:\/w\/[^/]+)?\/apps\/[^/]+\/versions\/[^/]+/;
 
 let enabled = false;
 let observer = null;
@@ -17,17 +17,19 @@ function isAppEditorUrl() {
 }
 
 function installHistoryLocationHooks() {
-  const schedule = () => queueMicrotask(onLocationMaybeChanged);
-  window.addEventListener('popstate', schedule);
+  window.addEventListener('popstate', () => queueMicrotask(onLocationMaybeChanged));
+  window.addEventListener('tulbelt:navigate', () => queueMicrotask(onLocationMaybeChanged));
+  if (window.__tulbeltHistoryHooked) return;
+  window.__tulbeltHistoryHooked = true;
   const { pushState, replaceState } = history;
   history.pushState = function patchedPushState(...args) {
     const r = pushState.apply(this, args);
-    schedule();
+    window.dispatchEvent(new CustomEvent('tulbelt:navigate'));
     return r;
   };
   history.replaceState = function patchedReplaceState(...args) {
     const r = replaceState.apply(this, args);
-    schedule();
+    window.dispatchEvent(new CustomEvent('tulbelt:navigate'));
     return r;
   };
 }
@@ -130,7 +132,7 @@ function stopObserver() {
 async function syncFromStorage() {
   const { [STORAGE_KEY]: stored = {} } =
     await chrome.storage.local.get(STORAGE_KEY);
-  const next = stored[FEATURE_ID] ?? false;
+  const next = stored[FEATURE_ID] === true;
   if (next === enabled) return;
   enabled = next;
   if (enabled) {

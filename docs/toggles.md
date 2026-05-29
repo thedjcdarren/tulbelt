@@ -56,7 +56,11 @@ Small, self-contained tweaks. Listed in `features.js` order.
 
 On tulip.co table views, redirects to a URL that sorts by `_createdAt`
 descending so the most recently created rows are on top. Implemented as a
-`declarativeNetRequest` redirect rule rather than a content script.
+`declarativeNetRequest` redirect rule plus a `background.js` bridge that catches
+SPA navigations DNR misses. The bridge ignores Back/Forward navigations
+(`forward_back` transition qualifier) and instead steps back past the un-sorted
+duplicate entry the redirect leaves behind — otherwise re-sorting on Back made
+the browser Back button "go to itself".
 
 ### Row actions next to name — `reorder-row-buttons` · **default: on**
 
@@ -108,3 +112,40 @@ surfaces are layered on top.
 
 Removes the leading "Tulip | " prefix from browser tab/window titles so the
 page-specific name shows first.
+
+### Frequent actions on top — `action-editor-frequent` · **default: on**
+
+In the trigger action-type dropdown (`select[data-testid$="action-editor"]`),
+moves Data Manipulation, Table Records, Run Function, and Run Connector Function
+to the top under a "Frequent" group, with the rest under "All actions" in their
+original alphabetical order. The select is React-controlled, so a sibling proxy
+`<select>` is rendered in its place (the real one is hidden) and selections are
+forwarded back to React via a native value setter + bubbling change event.
+
+### Collapse table rows — `collapse-tables-tile` · **default: off**
+
+On app version editor pages only (`/w/…/apps/…/versions/…` or
+`/apps/…/versions/…`), turns each row of
+the Tables tile in the right context pane into a tree-view item. A caret pinned
+to the right edge of each row toggles its collapsed state; when collapsed, the
+row's Query / Record Placeholder buttons, aggregations, and linked record
+placeholders are hidden, leaving just the icon, table name, and a two-line
+"· N placeholders" / "· M aggregations" summary visible (lines with a zero
+count are omitted). A "Collapse all" / "Expand all" toggle below the Add
+Table row collapses or expands every table at once. The summary is hidden when
+expanded, and the table-name button keeps its original menu-open click. Each
+table starts collapsed; state lives in DOM attributes only, so a fresh
+navigation collapses everything again.
+
+### Snap widgets to 5px grid — `snap-to-grid` · **default: off**
+
+On app version editor pages only (`/w/…/apps/…/versions/…` or
+`/apps/…/versions/…`), snaps a widget's position and size to the nearest
+multiple of 5 when a drag or resize ends. Tulip owns the drag; on `pointerup`
+the values that changed during the interaction are rounded and written back
+through the context-pane number inputs (`context-pane-tool-position-x/-y`,
+`-size-w/-h`) via a native value setter + bubbling `input`/`change`, the same
+React write-back the `action-editor-frequent` proxy uses. A move snaps only
+X/Y, a resize snaps size (and X/Y if the handle moved them); fields the
+interaction didn't change — and values typed directly into the inputs — are
+left untouched.

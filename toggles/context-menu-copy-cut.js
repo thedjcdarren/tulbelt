@@ -17,7 +17,7 @@ const LIST_MARK = 'data-tulbelt-cc-list';
 const ROW_MARK = 'data-tulbelt-cc-row';
 const NAV_HOOK = 'data-tulbelt-cc-nav';
 
-const DEBUG = true;
+const DEBUG = false;
 function log(...args) {
   if (!DEBUG) return;
   try {
@@ -32,6 +32,7 @@ let docObserver = null;
 const navObservers = new Set();
 /** @type {Document[]} */
 let hookedDocs = [];
+let sweepHandle = null;
 
 // ---------- cross-realm safe shape checks ----------
 function isElement(n) {
@@ -480,7 +481,7 @@ async function syncFromStorage() {
   } catch (e) {
     log('storage read failed', e?.message || e);
   }
-  const next = stored[FEATURE_ID] ?? true;
+  const next = stored[FEATURE_ID] === true;
   log('syncFromStorage enabled=', next);
   if (next === enabled) return;
   enabled = next;
@@ -488,7 +489,9 @@ async function syncFromStorage() {
     startDocObserver();
     installGestureHooks();
     scanEverywhere();
+    sweepHandle = setInterval(() => { installGestureHooks(); scanEverywhere(); }, 1500);
   } else {
+    if (sweepHandle) { clearInterval(sweepHandle); sweepHandle = null; }
     stopDocObserver();
     removeGestureHooks();
     removeAllInjections();
@@ -499,14 +502,5 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes[STORAGE_KEY]) syncFromStorage();
 });
 
-log('script loaded build=2026-05-15.b');
 syncFromStorage();
-
-// Safety net: a periodic sweep catches new same-origin frames and
-// re-injects if React (or anything) ever drops our list.
-setInterval(() => {
-  if (!enabled) return;
-  installGestureHooks();
-  scanEverywhere();
-}, 1500);
 })();

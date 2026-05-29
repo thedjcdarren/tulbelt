@@ -35,7 +35,7 @@ async function syncFromStorage() {
     log('storage read failed:', e?.message || e);
     return;
   }
-  const next = stored[FEATURE_ID] ?? false;
+  const next = stored[FEATURE_ID] === true;
   setAttr(next);
 }
 

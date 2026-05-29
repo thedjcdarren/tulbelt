@@ -308,7 +308,7 @@ async function syncFromStorage() {
     }
     throw err;
   }
-  const next = stored[FEATURE_ID] ?? false;
+  const next = stored[FEATURE_ID] === true;
   if (next === enabled) return;
   enabled = next;
   if (enabled) start();

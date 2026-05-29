@@ -4,10 +4,6 @@
 
 (() => {
 const FEATURE_ID = 'compact-app-editor-header';
-const LEGACY_IDS = [
-  'hide-app-editor-palette-icons',
-  'hide-subheader-workspace-label',
-];
 const STORAGE_KEY = 'toggles';
 const STYLE_ID = 'tulbelt-compact-app-editor-header-styles';
 
@@ -54,13 +50,6 @@ ${workspaceLabel}
 ${tighterVerticalBars}`;
 }
 
-function readEnabled(stored) {
-  if (Object.prototype.hasOwnProperty.call(stored, FEATURE_ID)) {
-    return stored[FEATURE_ID];
-  }
-  return LEGACY_IDS.some((id) => stored[id] === true);
-}
-
 function ensureStyles() {
   if (document.getElementById(STYLE_ID)) return;
   const style = document.createElement('style');
@@ -76,7 +65,7 @@ function removeStyles() {
 async function syncFromStorage() {
   const { [STORAGE_KEY]: stored = {} } =
     await chrome.storage.local.get(STORAGE_KEY);
-  const next = readEnabled(stored);
+  const next = stored[FEATURE_ID] === true;
   if (next === enabled) return;
   enabled = next;
   if (enabled) ensureStyles();

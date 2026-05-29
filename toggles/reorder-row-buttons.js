@@ -135,7 +135,7 @@ function stopObserver() {
 async function syncFromStorage() {
   const { [STORAGE_KEY]: stored = {} } =
     await chrome.storage.local.get(STORAGE_KEY);
-  const next = stored[FEATURE_ID] ?? true;
+  const next = stored[FEATURE_ID] === true;
   if (next === enabled) return;
   enabled = next;
   if (enabled) {

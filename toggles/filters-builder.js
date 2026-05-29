@@ -7,14 +7,21 @@
 // cell on the right — so width, vertical rhythm and the delete button
 // land in the same positions as on the other parameter rows. The original
 // input wrapper stays mounted (hidden) so React keeps owning the state;
-// on every builder change we serialize to JSON and write into the first
-// <input> via the native value setter + a bubbling `input` event so
-// React's onChange fires.
+// on every builder change we serialize to JSON and push it into the field
+// via the native value setter + a bubbling `input` event so React's onChange
+// fires.
 //
 // Variable pills are surface sugar for `$VariableName$` literal text that
 // Tulip substitutes at submit time. We round-trip them as JSON strings of
 // the form `"$Label$"`, so a user can also just type `$Name$` directly in
-// the arg field and get the same wire format.
+// the arg field and get the same wire format. The catch: the field is a
+// pill editor (`TextInputWithPills`) whose value is an ordered token list —
+// one <input> per text run, one `.param-pill` per `$Variable$` — and writing
+// a JSON blob into one input leaves the old pill tokens behind, so they pile
+// up and corrupt the value. So when pills are present we rebuild the field
+// from scratch on each push: clear the text tokens, delete the pills through
+// Tulip's own Backspace handler, then write the JSON and let Tulip re-pillify
+// the `$Variable$`s cleanly. See `pushJson`/`rebuildValue`.
 
 (() => {
 const FEATURE_ID = 'filters-builder';
@@ -268,21 +275,38 @@ function getValueText(wrapper) {
     if (input) segments.push({ kind: 'text', value: input.value });
   }
 
-  const parts = [];
-  for (let i = 0; i < segments.length; i++) {
-    const seg = segments[i];
+  // Walk segments left to right, tracking whether we're currently inside a
+  // JSON string literal. A pill that lands inside a string is spliced as raw
+  // `$Label$`; one outside is JSON-quoted so the array still parses. Tracking
+  // the real string state (instead of peeking only at the adjacent text)
+  // keeps consecutive pills — `$A$$B$`, which Tulip renders with an empty
+  // input between them — from each re-opening a quote and breaking the JSON.
+  let out = '';
+  let inString = false;
+  for (const seg of segments) {
     if (seg.kind === 'text') {
-      parts.push(seg.value);
+      out += seg.value;
+      inString = scanStringState(seg.value, inString);
       continue;
     }
-    const prev = segments[i - 1];
-    const next = segments[i + 1];
-    const prevText = prev?.kind === 'text' ? prev.value : '';
-    const nextText = next?.kind === 'text' ? next.value : '';
-    const insideQuotes = prevText.endsWith('"') && nextText.startsWith('"');
-    parts.push(insideQuotes ? `$${seg.label}$` : JSON.stringify(`$${seg.label}$`));
+    out += inString ? `$${seg.label}$` : JSON.stringify(`$${seg.label}$`);
   }
-  return parts.join('');
+  return out;
+}
+
+// Update "are we inside a JSON string literal?" across a run of text. Flips on
+// each unescaped double quote; skips the char following a backslash.
+function scanStringState(text, inString) {
+  let inStr = inString;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '\\') {
+      i++;
+      continue;
+    }
+    if (ch === '"') inStr = !inStr;
+  }
+  return inStr;
 }
 
 function stringifyArg(arg) {
@@ -368,13 +392,101 @@ function serializeFilters(filters) {
   return JSON.stringify(out);
 }
 
-function pushJson(wrapper, json) {
+function pillsIn(wrapper) {
+  return wrapper.querySelectorAll(PILL_SELECTOR);
+}
+
+// Direct write into a single-token field (no pills): set the first input to
+// the JSON, empty any stragglers. Safe and synchronous.
+function writeSingle(wrapper, json) {
   const inputs = wrapper.querySelectorAll('input');
   let first = true;
   for (const input of inputs) {
     setNativeInputValue(input, first ? json : '');
     first = false;
   }
+}
+
+function nextTick() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+// Tulip's pill editor removes the pill before the caret when Backspace is
+// pressed at the start of a text token. Drive that handler directly.
+function dispatchBackspace(input) {
+  const init = {
+    key: 'Backspace',
+    code: 'Backspace',
+    keyCode: 8,
+    which: 8,
+    bubbles: true,
+    cancelable: true,
+  };
+  input.dispatchEvent(new KeyboardEvent('keydown', init));
+  input.dispatchEvent(new KeyboardEvent('keyup', init));
+}
+
+// Rebuild the value field from a clean slate. Tulip stores the field as an
+// ordered token list (one <input> per text run, one `.param-pill` per
+// `$Variable$`); a blob write leaves the old pill tokens behind, so we first
+// clear text, then delete pills through Tulip's own handler (keeping its
+// state consistent), then write the JSON and let Tulip re-pillify cleanly.
+async function rebuildValue(wrapper, json) {
+  for (const input of wrapper.querySelectorAll('input')) {
+    if (input.value !== '') setNativeInputValue(input, '');
+  }
+  await nextTick();
+
+  // Bail on a pass that removes nothing so a change in Tulip's Backspace
+  // behavior can't spin us forever; we fall back to a blob write below.
+  let guard = 0;
+  while (pillsIn(wrapper).length > 0 && guard++ < 100) {
+    const inputs = wrapper.querySelectorAll('input');
+    const last = inputs[inputs.length - 1];
+    if (!last) break;
+    try {
+      last.setSelectionRange(0, 0);
+    } catch (_) {}
+    const before = pillsIn(wrapper).length;
+    dispatchBackspace(last);
+    await nextTick();
+    if (pillsIn(wrapper).length >= before) break;
+  }
+
+  writeSingle(wrapper, json);
+  await nextTick();
+}
+
+// Per-wrapper coalescing scheduler. A rebuild spans several frames, so newer
+// values that arrive mid-rebuild are picked up when the current one settles.
+const pushState = new WeakMap();
+
+function pushJson(wrapper, json) {
+  // Fast path: no pills means a direct synchronous write is correct.
+  if (pillsIn(wrapper).length === 0) {
+    writeSingle(wrapper, json);
+    return;
+  }
+
+  let state = pushState.get(wrapper);
+  if (!state) {
+    state = { latest: json, running: false };
+    pushState.set(wrapper, state);
+  }
+  state.latest = json;
+  if (state.running) return;
+  state.running = true;
+  (async () => {
+    try {
+      let applied = null;
+      while (applied !== state.latest) {
+        applied = state.latest;
+        await rebuildValue(wrapper, applied);
+      }
+    } finally {
+      state.running = false;
+    }
+  })();
 }
 
 const TRASH_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"></path></svg>`;
@@ -718,7 +830,7 @@ function stopObserver() {
 async function syncFromStorage() {
   const { [STORAGE_KEY]: stored = {} } =
     await chrome.storage.local.get(STORAGE_KEY);
-  const next = stored[FEATURE_ID] ?? false;
+  const next = stored[FEATURE_ID] === true;
   if (next === enabled) return;
   enabled = next;
   if (enabled) {

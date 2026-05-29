@@ -14,7 +14,7 @@ export const FEATURES = [
     id: 'table-default-sort',
     name: 'Sort Tables New to Old',
     description:
-      'On the tables page, redirects to a URL that sorts by _createdAt descending.',
+      'On the tables page, redirects to a URL that sorts by _createdAt descending. Also fixes the browser Back button, which this redirect otherwise made "go to itself".',
     defaultEnabled: true,
     major: true,
     rule: {
@@ -140,6 +140,38 @@ export const FEATURES = [
     defaultEnabled: true,
     major: true,
   },
+  {
+    id: 'collapse-tables-tile',
+    name: 'Collapse Table Rows',
+    description:
+      'On app editor pages, click the caret at the right edge of a table row in the Tables tile to collapse/expand its Query, Record Placeholder, and linked record buttons. Each table starts collapsed — only the icon, table name, and a two-line "· N placeholders" / "· M aggregations" summary show until you expand it. The table name still opens its menu on click. A "Collapse all" / "Expand all" toggle below the Add Table row collapses or expands every table at once.',
+    defaultEnabled: false,
+    major: false,
+  },
+  {
+    id: 'app-menu-recents-favorites',
+    name: 'App Menu: Recents & Favorites',
+    description:
+      'In the top-nav app menu dropdown, add Recents and Favorites links below the existing entries.',
+    defaultEnabled: true,
+    major: false,
+  },
+  {
+    id: 'action-editor-frequent',
+    name: 'Frequent Actions On Top',
+    description:
+      'In the trigger action-type dropdown, move Data Manipulation, Table Records, Run Function, and Run Connector Function to the top under a “Frequent” group, with the rest under “All actions”.',
+    defaultEnabled: true,
+    major: false,
+  },
+  {
+    id: 'snap-to-grid',
+    name: 'Snap Widgets to 5px Grid',
+    description:
+      'In the app editor, snap a widget’s position and size to the nearest multiple of 5 when you finish dragging or resizing it. Only the values changed by that interaction are snapped; manual edits to the X/Y/W/H fields are left alone.',
+    defaultEnabled: false,
+    major: false,
+  },
 ];
 
 // Popup list grouping — set `major: true` on a feature to pin it in the
@@ -165,25 +197,49 @@ export function ruleIdFor(index) {
   return index + 1;
 }
 
+// Resolve a single feature's value from raw stored toggles, falling back to its
+// declared default (and applying the one-time legacy migration for the merged
+// compact-app-editor-header toggle).
+function resolveDefault(stored, feature) {
+  if (feature.id === 'compact-app-editor-header') {
+    if (Object.prototype.hasOwnProperty.call(stored, feature.id)) {
+      return stored[feature.id];
+    }
+    const migrated = LEGACY_COMPACT_APP_EDITOR_HEADER_IDS.some(
+      (id) => stored[id] === true,
+    );
+    return migrated || feature.defaultEnabled;
+  }
+  return stored[feature.id] ?? feature.defaultEnabled;
+}
+
 export async function getToggles() {
   const { [STORAGE_KEY]: stored = {} } =
     await chrome.storage.local.get(STORAGE_KEY);
   const result = {};
   for (const f of FEATURES) {
-    if (f.id === 'compact-app-editor-header') {
-      if (Object.prototype.hasOwnProperty.call(stored, f.id)) {
-        result[f.id] = stored[f.id];
-      } else {
-        const migrated = LEGACY_COMPACT_APP_EDITOR_HEADER_IDS.some(
-          (id) => stored[id] === true,
-        );
-        result[f.id] = migrated || f.defaultEnabled;
-      }
-    } else {
-      result[f.id] = stored[f.id] ?? f.defaultEnabled;
-    }
+    result[f.id] = resolveDefault(stored, f);
   }
   return result;
+}
+
+// Persist defaults into storage so that `chrome.storage` is the single runtime
+// source of truth — content scripts then read it directly without each
+// hardcoding its own default. Only writes keys that are missing, so it never
+// clobbers a choice the user has already made. Because it runs on install,
+// update, and startup (see background.js), any toggle shipped in a later
+// version gets its default seeded the next time the extension loads.
+export async function seedDefaults() {
+  const { [STORAGE_KEY]: stored = {} } =
+    await chrome.storage.local.get(STORAGE_KEY);
+  const next = { ...stored };
+  let changed = false;
+  for (const f of FEATURES) {
+    if (Object.prototype.hasOwnProperty.call(next, f.id)) continue;
+    next[f.id] = resolveDefault(stored, f);
+    changed = true;
+  }
+  if (changed) await chrome.storage.local.set({ [STORAGE_KEY]: next });
 }
 
 export async function setToggle(id, enabled) {
