@@ -65,6 +65,15 @@ source of truth, and the rest is per-toggle leaves.
   path. `toggles/strip-tab-title-prefix.js` is the canonical short example.
 - **Don't reorder `FEATURES`** unless you accept that DNR rule IDs shift.
 - **Don't reuse a toggle `id`** — IDs are persisted in user storage.
+- **Never commit tenant-specific Tulip hostnames.** Customer instance URLs
+  (e.g. a real `your-instance.tulip.co` URL copied from the browser) must not
+  appear in commits, PRs, docs, comments, or
+  test notes. Use only wildcards and placeholders already in the repo:
+  `*.tulip.co`, `*://*.tulip.co/*`, regex like `\\1.tulip.co`, or doc
+  placeholders `example.tulip.co` / `your-instance.tulip.co`. Do not paste
+  URLs from your browser bar, DevTools, screenshots, or local scratch files
+  into tracked files. Put instance-specific repro steps in gitignored local
+  notes (see `.gitignore`).
 
 ## Adding a toggle
 

@@ -188,6 +188,14 @@ export const FEATURES = [
     defaultEnabled: false,
     major: false,
   },
+  {
+    id: 'query-list-search',
+    name: 'Searchable Query Picker',
+    description:
+      'In the Query picker popup, cap its height to the screen (the list scrolls inside) and add a sticky search box at the top that filters the saved queries by name as you type.',
+    defaultEnabled: true,
+    major: false,
+  },
 ];
 
 // Popup list grouping — set `major: true` on a feature to pin it in the

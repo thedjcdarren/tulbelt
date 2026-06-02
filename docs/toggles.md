@@ -164,3 +164,19 @@ React write-back the `action-editor-frequent` proxy uses. A move snaps only
 X/Y, a resize snaps size (and X/Y if the handle moved them); fields the
 interaction didn't change — and values typed directly into the inputs — are
 left untouched.
+
+### Searchable query picker — `query-list-search` · **default: on**
+
+In the Query picker popper (the column of saved-query buttons opened from a
+Query field), caps the popper column to 75% of the viewport height — the list
+scrolls inside instead of running off the bottom — restores a readable 14px
+font (Tulip shrinks it to cram every query in), adds 6px of spacing between the
+query buttons, fixes the column to a 280px width so long query names truncate
+with an ellipsis (hovering a truncated button shows its full name via a `title`
+tooltip), and inserts a sticky search box as the first child. Typing
+filters the query buttons by case-insensitive substring; the "Create New Query"
+action is never hidden. The popper is
+portal-mounted with hashed class names, so it's found by content (the
+"Create New Query" button) and its parent column is the element we cap and
+filter. Tulip's React buttons are never reparented — only hidden inline — so
+the transient popper reverts cleanly on disable.

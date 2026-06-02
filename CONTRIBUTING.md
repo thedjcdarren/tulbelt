@@ -16,6 +16,10 @@ changes that add a toolchain or framework will be asked to justify themselves.
 - **Match the existing style.** 2-space indent, single quotes, semicolons, and
   a top-of-file comment explaining *why* the approach works (not just what it
   does). Read a couple of existing files first.
+- **No tenant-specific hostnames in git.** Do not commit real customer instance
+  URLs (`<tenant>.tulip.co`). Use `*.tulip.co` in code and
+  `example.tulip.co` / `your-instance.tulip.co` in prose. Keep local repro
+  URLs in gitignored files (see `.gitignore`).
 
 ## Architecture in one minute
 
