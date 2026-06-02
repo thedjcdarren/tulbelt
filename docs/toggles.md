@@ -36,6 +36,21 @@ parameter with a row-per-filter builder (field, function, arg). Variable pills
 round-trip as `$Name$` strings; type `$Name$` directly in an arg field to
 reference a variable.
 
+### Full variable path on selection — `variable-full-path` · **default: on**
+
+In the trigger editor variable picker, when you select a nested Object field,
+rewrites the trigger button label from the leaf name only to the full ancestor
+path (`Parent → Child → Leaf`). Uses indent depth in the virtualised dropdown
+(and optional disabled group-header rows) to reconstruct the hierarchy.
+
+### Expand all variable paths — `expand-all-variable-paths` · **default: on**
+
+Adds an **Expand paths** control in the app editor toolbar (beside the copy-link
+icon). Walks every "Select new variable or array" trigger on the page, briefly
+opens each dropdown to read the selected item's hierarchy, then patches labels
+the same way as `variable-full-path`. Skips top-level variables and buttons
+already expanded.
+
 ### Copy/Cut in widget menu — `context-menu-copy-cut` · **default: on**
 
 In the app editor canvas widget context menu (Delete / Move To Front / Back),

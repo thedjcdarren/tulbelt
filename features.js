@@ -133,6 +133,22 @@ export const FEATURES = [
     major: true,
   },
   {
+    id: 'variable-full-path',
+    name: 'Show Full Variable Path on Selection',
+    description:
+      'In the trigger editor, when a nested Object field is selected from a variable dropdown, show the full ancestor path ("Object → Field → SubField") in the selected-value display instead of just the leaf field name.',
+    defaultEnabled: true,
+    major: true,
+  },
+  {
+    id: 'expand-all-variable-paths',
+    name: 'Expand All Variable Paths Button',
+    description:
+      'Adds an "Expand paths" button to the app editor toolbar. Clicking it briefly opens each variable trigger button on the page to learn the selected item\'s full hierarchy, then rewrites the display to show "Object → Field → SubField". Skips top-level variables and already-expanded buttons.',
+    defaultEnabled: true,
+    major: true,
+  },
+  {
     id: 'expression-editor-fuzzy',
     name: 'Improved Expression Autocomplete',
     description:
