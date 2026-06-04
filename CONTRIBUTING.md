@@ -45,6 +45,7 @@ changes that add a toolchain or framework will be asked to justify themselves.
      name: 'Human readable name',
      description: 'One sentence the popup shows.',
      defaultEnabled: false,     // be conservative; most start off
+     developerOnly: true,       // optional — hidden until dev mode (see below)
    },
    ```
 2. Create `toggles/my-feature.js` following the existing pattern. Copy a small
@@ -59,6 +60,17 @@ changes that add a toolchain or framework will be asked to justify themselves.
    `content_scripts`. Add it to the
    default array, unless it needs the page's own JS context
    (`world: "MAIN"` array) or must run in subframes (`all_frames` array).
+
+### Developer-only toggles
+
+Set `developerOnly: true` on a `FEATURES` entry to hide it from the popup and
+force it off at runtime unless the user unlocks **developer mode** (five quick
+clicks on the popup title **Tulbelt**; subtitle shows `· developer`). Stored
+toggle values are preserved so turning dev mode back on restores prior choices.
+
+`getToggles()` enforces the off state for DNR-backed features. Content scripts
+must also gate on `developerMode` in storage if they read `toggles` directly
+(see `toggles/expression-editor-fuzzy.js`).
 
 ### Case B — a pure network rule (redirect/block, no DOM)
 

@@ -62,8 +62,17 @@ function isBodyRow(row) {
 }
 
 function reorderRow(row) {
-  if (row.getAttribute(REORDER_ATTR) === 'true') return;
   const widthsAttr = row.getAttribute('widths') || '';
+  // Skip only if we already reordered this row from the *same* widths
+  // signature. React reuses row nodes (notably the header) across view
+  // changes and rewrites `widths` in place; without this check a stale
+  // grid-template-columns would survive and misalign the row.
+  if (
+    row.getAttribute(REORDER_ATTR) === 'true' &&
+    row.dataset.tulbeltReorderSrc === widthsAttr
+  ) {
+    return;
+  }
   const widths = splitTrackList(widthsAttr);
   if (widths.length < 4) return;
 
@@ -87,11 +96,13 @@ function reorderRow(row) {
     'important'
   );
   row.setAttribute(REORDER_ATTR, 'true');
+  row.dataset.tulbeltReorderSrc = widthsAttr;
 }
 
 function restoreRow(row) {
   row.style.removeProperty('grid-template-columns');
   row.removeAttribute(REORDER_ATTR);
+  delete row.dataset.tulbeltReorderSrc;
 }
 
 function applyToAll() {

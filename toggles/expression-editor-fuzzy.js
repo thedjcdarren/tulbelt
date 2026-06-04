@@ -12,6 +12,7 @@
 (() => {
 const FEATURE_ID = 'expression-editor-fuzzy';
 const STORAGE_KEY = 'toggles';
+const DEVELOPER_MODE_KEY = 'developerMode';
 const ATTR = 'data-tulbelt-fuzzy-enabled';
 const DEBUG = false;
 
@@ -28,19 +29,22 @@ function setAttr(enabled) {
 
 async function syncFromStorage() {
   let stored = {};
+  let developerMode = false;
   try {
-    const raw = await chrome.storage.local.get(STORAGE_KEY);
+    const raw = await chrome.storage.local.get([STORAGE_KEY, DEVELOPER_MODE_KEY]);
     if (raw && typeof raw[STORAGE_KEY] === 'object') stored = raw[STORAGE_KEY];
+    developerMode = raw[DEVELOPER_MODE_KEY] === true;
   } catch (e) {
     log('storage read failed:', e?.message || e);
     return;
   }
-  const next = stored[FEATURE_ID] === true;
+  const next = stored[FEATURE_ID] === true && developerMode;
   setAttr(next);
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes[STORAGE_KEY]) syncFromStorage();
+  if (area !== 'local') return;
+  if (changes[STORAGE_KEY] || changes[DEVELOPER_MODE_KEY]) syncFromStorage();
 });
 
 syncFromStorage();

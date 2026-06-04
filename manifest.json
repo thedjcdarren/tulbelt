@@ -4,7 +4,7 @@
 
   "name": "Tulbelt",
 
-  "version": "1.0.2",
+  "version": "1.0.3",
 
   "description": "Quality-of-life toggles for tulip.co.",
 
@@ -38,7 +38,7 @@
 
       "matches": ["*://*.tulip.co/*"],
 
-      "js": ["toggles/reorder-row-buttons.js", "toggles/auto-snapshot.js", "toggles/hide-legacy.js", "toggles/disable-tooltips.js", "toggles/hide-view-only-triggers.js", "toggles/move-variables-to-toolbar.js", "toggles/hide-app-editor-chrome.js", "toggles/compact-app-editor-header.js", "toggles/dark-mode.js", "toggles/strip-tab-title-prefix.js", "toggles/filters-builder.js", "toggles/variable-full-path.js", "toggles/expand-all-variable-paths.js", "toggles/expression-editor-fuzzy.js", "toggles/collapse-tables-tile.js", "toggles/app-menu-recents-favorites.js", "toggles/action-editor-frequent.js", "toggles/query-list-search.js"],
+      "js": ["toggles/reorder-row-buttons.js", "toggles/auto-snapshot.js", "toggles/hide-legacy.js", "toggles/disable-tooltips.js", "toggles/hide-view-only-triggers.js", "toggles/move-variables-to-toolbar.js", "toggles/hide-app-editor-chrome.js", "toggles/compact-app-editor-header.js", "toggles/dark-mode.js", "toggles/strip-tab-title-prefix.js", "toggles/filters-builder.js", "toggles/variable-full-path.js", "toggles/expand-all-variable-paths.js", "toggles/expression-editor-fuzzy.js", "toggles/collapse-tables-tile.js", "toggles/app-menu-recents-favorites.js", "toggles/action-editor-frequent.js", "toggles/query-list-search.js", "toggles/history-search.js", "toggles/app-list-date-columns.js"],
 
       "run_at": "document_idle"
 
@@ -63,6 +63,18 @@
       "js": ["toggles/expression-editor-fuzzy-main.js"],
 
       "run_at": "document_idle",
+
+      "world": "MAIN"
+
+    },
+
+    {
+
+      "matches": ["*://*.tulip.co/*"],
+
+      "js": ["toggles/app-list-date-columns-main.js"],
+
+      "run_at": "document_start",
 
       "world": "MAIN"
 

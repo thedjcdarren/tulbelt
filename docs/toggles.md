@@ -20,9 +20,10 @@ tweaks or a declarative redirect.
 These carry the most logic and the most surface area for Tulip UI changes to
 break them. Listed most-complex first.
 
-### Fuzzy expression autocomplete — `expression-editor-fuzzy` · **default: off**
+### Fuzzy expression autocomplete — `expression-editor-fuzzy` · **default: off** · **developer-only**
 
-In the formula/expression editor popup, replaces the "starts with" filtering of
+Hidden from the popup unless developer mode is on (five quick clicks on the
+popup title). In the formula/expression editor popup, replaces the "starts with" filtering of
 suggestions with a case-insensitive substring (contains) match. Typing `User.`
 surfaces `@Table record.Current User.ID` etc. Arrow keys / Enter / click work
 as before. The heaviest feature in the extension: a two-world (isolated + MAIN)
@@ -180,3 +181,17 @@ portal-mounted with hashed class names, so it's found by content (the
 "Create New Query" button) and its parent column is the element we cap and
 filter. Tulip's React buttons are never reparented — only hidden inline — so
 the transient popper reverts cleanly on disable.
+
+### App list Created/Completed columns — `app-list-date-columns` · **default: on**
+
+On app/folder list pages, adds **Created** and **Last Completed** columns after
+**Last Modified**. Those dates aren't in the DOM — they live in the JSON the page
+fetches from `/api/apps/v1/.../apps` — so a `world: "MAIN"` half (`run_at:
+document_start`) transparently patches `fetch`/XHR to capture `{ id ->
+created.at, lastCompleted.at }`, while an isolated half bridges the toggle state
+via `<html data-tulbelt-app-dates-enabled>`. Two cells are cloned from the Last
+Modified cell and inserted before the trailing button columns, and the row's
+`grid-template-columns` is widened to match (replaying `reorder-row-buttons`'s
+permutation when that toggle is also on, so both stay aligned). Folder rows and
+never-completed apps show an em dash. Reverts to the original grid on disable; the
+invisible capture wrapper stays. See `docs/app-list-date-columns.md`.

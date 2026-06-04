@@ -1,4 +1,13 @@
-import { getPopupFeatureGroups, getToggles, setToggle } from './features.js';
+import {
+  getDeveloperMode,
+  getPopupFeatureGroups,
+  getToggles,
+  setDeveloperMode,
+  setToggle,
+} from './features.js';
+
+const DEV_MODE_CLICKS = 5;
+const DEV_MODE_CLICK_WINDOW_MS = 2000;
 
 const featureTemplate = document.createElement('template');
 featureTemplate.innerHTML = `
@@ -88,8 +97,8 @@ function createFeatureNode(feature, enabled, sectionId) {
   return node;
 }
 
-function buildPopupFeatures(toggles) {
-  const { major, more } = getPopupFeatureGroups();
+function buildPopupFeatures(toggles, showDeveloperFeatures) {
+  const { major, more } = getPopupFeatureGroups({ showDeveloperFeatures });
   const items = [];
 
   if (major.length) {
@@ -133,13 +142,45 @@ function filterFeatures(query, list, noResults) {
   list.hidden = visibleFeatures === 0;
 }
 
+function bindDeveloperModeUnlock(onChange) {
+  const title = document.querySelector('.header-brand h1');
+  if (!title) return;
+
+  let clicks = 0;
+  let resetTimer = null;
+
+  title.addEventListener('click', async () => {
+    clicks += 1;
+    clearTimeout(resetTimer);
+    resetTimer = setTimeout(() => {
+      clicks = 0;
+    }, DEV_MODE_CLICK_WINDOW_MS);
+
+    if (clicks < DEV_MODE_CLICKS) return;
+    clicks = 0;
+    clearTimeout(resetTimer);
+
+    const next = !(await getDeveloperMode());
+    await setDeveloperMode(next);
+    onChange(next);
+  });
+}
+
+function setDeveloperModeSubtitle(enabled) {
+  const subtitle = document.querySelector('.subtitle');
+  if (!subtitle) return;
+  subtitle.textContent = enabled ? 'tulip.co tweaks · developer' : 'tulip.co tweaks';
+}
+
 async function render() {
+  const developerMode = await getDeveloperMode();
   const toggles = await getToggles();
   const list = document.getElementById('toggles');
   const search = document.getElementById('feature-search');
   const noResults = document.getElementById('no-results');
 
-  list.replaceChildren(...buildPopupFeatures(toggles));
+  setDeveloperModeSubtitle(developerMode);
+  list.replaceChildren(...buildPopupFeatures(toggles, developerMode));
 
   search.addEventListener('input', () =>
     filterFeatures(search.value, list, noResults),
@@ -155,6 +196,13 @@ async function render() {
       chrome.tabs.create({ url: link.href });
     });
   }
+
+  bindDeveloperModeUnlock(async (enabled) => {
+    setDeveloperModeSubtitle(enabled);
+    const nextToggles = await getToggles();
+    list.replaceChildren(...buildPopupFeatures(nextToggles, enabled));
+    filterFeatures(search.value, list, noResults);
+  });
 }
 
 render();

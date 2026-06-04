@@ -153,8 +153,9 @@ export const FEATURES = [
     name: 'Improved Expression Autocomplete',
     description:
       'In the formula/expression editor popup, replace the “starts with” filtering of suggestions with a case-insensitive substring (contains) match. Typing `User.` surfaces `@Table record.Current User.ID` etc. Arrow keys / Enter / click work as before. Ctrl+Enter (Cmd+Enter on Mac) saves.',
-    defaultEnabled: true,
+    defaultEnabled: false,
     major: true,
+    developerOnly: true,
   },
   {
     id: 'collapse-tables-tile',
@@ -196,14 +197,32 @@ export const FEATURES = [
     defaultEnabled: true,
     major: false,
   },
+  {
+    id: 'history-search',
+    name: 'App & Table History (Ctrl+L)',
+    description:
+      'Logs every app, table, and connector function you open and adds a Ctrl+L search palette to jump back to any of them by name or folder. Enter opens in the current tab; Ctrl/Cmd+Enter opens a new tab.',
+    defaultEnabled: true,
+    major: true,
+  },
+  {
+    id: 'app-list-date-columns',
+    name: 'App List: Created & Completed Columns',
+    description:
+      'On app/folder lists, add "Created" and "Last Completed" columns (sourced from the apps API the page already loads) after the Last Modified column.',
+    defaultEnabled: true,
+    major: false,
+  },
 ];
 
 // Popup list grouping — set `major: true` on a feature to pin it in the
-// "Major" section; reload the extension after editing this file.
-export function getPopupFeatureGroups() {
+// "Major" section; set `developerOnly: true` to hide until developer mode
+// (five clicks on the popup title). Reload the extension after editing this file.
+export function getPopupFeatureGroups({ showDeveloperFeatures = false } = {}) {
   const major = [];
   const more = [];
   for (const feature of FEATURES) {
+    if (feature.developerOnly === true && !showDeveloperFeatures) continue;
     if (feature.major === true) major.push(feature);
     else more.push(feature);
   }
@@ -214,6 +233,19 @@ export function getPopupFeatureGroups() {
 }
 
 export const STORAGE_KEY = 'toggles';
+export const DEVELOPER_MODE_KEY = 'developerMode';
+
+/** Popup-only features; forced off in getToggles() unless developer mode is on. */
+export async function getDeveloperMode() {
+  const { [DEVELOPER_MODE_KEY]: on } = await chrome.storage.local.get(
+    DEVELOPER_MODE_KEY,
+  );
+  return on === true;
+}
+
+export async function setDeveloperMode(enabled) {
+  await chrome.storage.local.set({ [DEVELOPER_MODE_KEY]: enabled });
+}
 
 // Rule IDs must be stable positive integers. Index-based keeps them predictable
 // across reloads as long as the order of FEATURES doesn't change.
@@ -240,9 +272,12 @@ function resolveDefault(stored, feature) {
 export async function getToggles() {
   const { [STORAGE_KEY]: stored = {} } =
     await chrome.storage.local.get(STORAGE_KEY);
+  const developerMode = await getDeveloperMode();
   const result = {};
   for (const f of FEATURES) {
-    result[f.id] = resolveDefault(stored, f);
+    let enabled = resolveDefault(stored, f);
+    if (f.developerOnly === true && !developerMode) enabled = false;
+    result[f.id] = enabled;
   }
   return result;
 }

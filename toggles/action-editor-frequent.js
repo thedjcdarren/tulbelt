@@ -1,10 +1,9 @@
 // The trigger action-type picker (`select[data-testid$="action-editor"]`) lists
-// every action alphabetically. This pins four frequent actions to the top under
-// a "Frequent" optgroup, with the rest under "All actions".
+// every action alphabetically. This pins four frequent actions to the top of the
+// list, with the rest following in their original order.
 //
-// The select is React-controlled, so we don't restructure its own nodes (moving
-// React's <option>s into <optgroup>s makes React later removeChild a node that
-// is no longer its direct child and throw). Instead — the filters-builder.js
+// The select is React-controlled, so we don't reorder its own nodes (React keeps
+// re-rendering and scrambling our order back). Instead — the filters-builder.js
 // pattern — we hide the real select and render a sibling proxy <select> we fully
 // own. On change we forward the chosen value into the real select via the native
 // value setter + a bubbling `change` event so React's onChange fires as usual.
@@ -83,7 +82,7 @@ function buildProxyOptions(proxy, real) {
     if (!byLabel.has(label)) byLabel.set(label, o);
   }
 
-  // The blank-label placeholder stays top-level so the unselected state works.
+  // The blank-label placeholder stays first so the unselected state works.
   const placeholder = opts.find((o) => o.textContent.trim() === '');
 
   const frequentOpts = [];
@@ -93,20 +92,14 @@ function buildProxyOptions(proxy, real) {
   }
   const frequentSet = new Set(frequentOpts);
 
+  // Placeholder, then the frequent actions, then everything else in order.
   if (placeholder) proxy.appendChild(cloneOption(placeholder));
-
-  if (frequentOpts.length) {
-    const group = document.createElement('optgroup');
-    group.label = 'Frequent';
-    for (const o of frequentOpts) group.appendChild(cloneOption(o));
-    proxy.appendChild(group);
+  for (const o of frequentOpts) proxy.appendChild(cloneOption(o));
+  for (const o of opts) {
+    if (o !== placeholder && !frequentSet.has(o)) {
+      proxy.appendChild(cloneOption(o));
+    }
   }
-
-  const rest = opts.filter((o) => o !== placeholder && !frequentSet.has(o));
-  const restGroup = document.createElement('optgroup');
-  restGroup.label = 'All actions';
-  for (const o of rest) restGroup.appendChild(cloneOption(o));
-  proxy.appendChild(restGroup);
 
   proxy.value = real.value;
 }
@@ -153,16 +146,6 @@ function attach(real) {
   proxy.addEventListener('change', () => {
     setNativeSelectValue(real, proxy.value);
   });
-
-  // <optgroup> labels and option indentation widen a select's auto width, so
-  // the closed proxy box would render wider than the original. Pin the proxy
-  // to the real select's current border-box width (measured while it's still
-  // visible) so the box looks identical.
-  const width = real.getBoundingClientRect().width;
-  if (width) {
-    proxy.style.boxSizing = 'border-box';
-    proxy.style.width = `${width}px`;
-  }
 
   real.parentElement.insertBefore(proxy, real.nextSibling);
   real.setAttribute(HIDDEN_ATTR, 'true');
