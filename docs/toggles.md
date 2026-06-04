@@ -153,18 +153,19 @@ expanded, and the table-name button keeps its original menu-open click. Each
 table starts collapsed; state lives in DOM attributes only, so a fresh
 navigation collapses everything again.
 
-### Snap widgets to 5px grid — `snap-to-grid` · **default: off**
+### Snap widgets to 10px grid — `snap-to-grid` · **default: off**
 
 On app version editor pages only (`/w/…/apps/…/versions/…` or
 `/apps/…/versions/…`), snaps a widget's position and size to the nearest
-multiple of 5 when a drag or resize ends. Tulip owns the drag; on `pointerup`
-the values that changed during the interaction are rounded and written back
-through the context-pane number inputs (`context-pane-tool-position-x/-y`,
-`-size-w/-h`) via a native value setter + bubbling `input`/`change`, the same
-React write-back the `action-editor-frequent` proxy uses. A move snaps only
-X/Y, a resize snaps size (and X/Y if the handle moved them); fields the
-interaction didn't change — and values typed directly into the inputs — are
-left untouched.
+multiple of 10 when a drag or resize ends. Tulip owns the drag; a press that
+doesn't move past a small threshold counts as a click and snaps nothing. After
+a real drag, the moved values (Tulip commits them to the pane a few frames
+late, so they're polled for) are rounded and written back through the
+context-pane number inputs (`context-pane-tool-position-x/-y`, `-size-w/-h`):
+the value is set via a native setter, then `input`/`change` + Enter + blur fire
+so Tulip's commit-on-blur handler persists it. A move snaps only X/Y, a resize
+snaps size (and X/Y if the handle moved them); fields the interaction didn't
+change — and values typed directly into the inputs — are left untouched.
 
 ### Searchable query picker — `query-list-search` · **default: on**
 

@@ -183,9 +183,9 @@ export const FEATURES = [
   },
   {
     id: 'snap-to-grid',
-    name: 'Snap Widgets to 5px Grid',
+    name: 'Snap Widgets to 10px Grid',
     description:
-      'In the app editor, snap a widget’s position and size to the nearest multiple of 5 when you finish dragging or resizing it. Only the values changed by that interaction are snapped; manual edits to the X/Y/W/H fields are left alone.',
+      'In the app editor, snap a widget’s position and size to the nearest multiple of 10 when you finish dragging or resizing it. Only the values changed by that interaction are snapped; clicking a widget or manually editing the X/Y/W/H fields is left alone.',
     defaultEnabled: false,
     major: false,
   },
