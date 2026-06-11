@@ -166,18 +166,10 @@ export const FEATURES = [
     major: false,
   },
   {
-    id: 'app-menu-recents-favorites',
-    name: 'App Menu: Recents & Favorites',
-    description:
-      'In the top-nav app menu dropdown, add Recents and Favorites links below the existing entries.',
-    defaultEnabled: true,
-    major: false,
-  },
-  {
     id: 'action-editor-frequent',
     name: 'Frequent Actions On Top',
     description:
-      'In the trigger action-type dropdown, move Data Manipulation, Table Records, Run Function, and Run Connector Function to the top under a “Frequent” group, with the rest under “All actions”.',
+      'Collapse the trigger action-type dropdown to Data Manipulation, Table Records, Run Function, and Run Connector Function, plus a “Show all actions…” option that expands the full list.',
     defaultEnabled: true,
     major: false,
   },
@@ -212,6 +204,23 @@ export const FEATURES = [
       'On app/folder lists, add "Created" and "Last Completed" columns (sourced from the apps API the page already loads) after the Last Modified column.',
     defaultEnabled: true,
     major: false,
+  },
+  {
+    id: 'dev-tools',
+    name: 'Dev Tools (Agent Debugging)',
+    description:
+      'Defines window.__tulbelt (isolated world) with logging and DOM-inspection helpers for agent-driven debugging. Run __tulbelt.copy() in the DevTools console (Tulbelt context) to copy a redacted JSON report. See docs/devtools.md.',
+    defaultEnabled: false,
+    major: false,
+    developerOnly: true,
+  },
+  {
+    id: 'filters-builder-v2',
+    name: 'Visual Tulip API Filters Builder v2',
+    description:
+      'Rewrite of the filters builder. Variable pills read and write as `$Name$` strings; a whole-arg variable shows as a chip in the builder, and typing `$Name$` in an arg field creates one. Don’t enable together with the original Visual Tulip API Filters Builder.',
+    defaultEnabled: false,
+    major: true,
   },
 ];
 
@@ -295,7 +304,10 @@ export async function seedDefaults() {
   let changed = false;
   for (const f of FEATURES) {
     if (Object.prototype.hasOwnProperty.call(next, f.id)) continue;
-    next[f.id] = resolveDefault(stored, f);
+    // Developer-only features must never be seeded on: content scripts read
+    // raw storage, so a true here would activate them for non-developer users
+    // even though getToggles() and the popup report them off.
+    next[f.id] = f.developerOnly === true ? false : resolveDefault(stored, f);
     changed = true;
   }
   if (changed) await chrome.storage.local.set({ [STORAGE_KEY]: next });

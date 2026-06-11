@@ -64,6 +64,12 @@ function setAuth(value) {
 // `{ items: [...] }`, or `{ apps: [...] }` of objects carrying an `id` are all
 // fair game (folder list, root apps list, paging, and the recents/favorites
 // endpoints, which use a different array shape).
+//
+// Merge is per-field, not whole-record: different endpoints carry different
+// slices of the truth (e.g. the `recents/apps?limit=6` response may omit
+// `lastCompleted`, the folder list omits nothing). A later, sparser response
+// must not clobber a date an earlier richer one already gave us, so we keep any
+// existing non-null value when the incoming one is null.
 function ingest(body) {
   if (!body || typeof body !== 'object') return;
   const items = Array.isArray(body)
@@ -80,8 +86,15 @@ function ingest(body) {
     const createdAt = item.created?.at ?? null;
     const lastCompletedAt = item.lastCompleted?.at ?? null;
     if (createdAt == null && lastCompletedAt == null) continue;
-    dataById.set(item.id, { createdAt, lastCompletedAt });
-    changed = true;
+    const prev = dataById.get(item.id);
+    const merged = {
+      createdAt: createdAt ?? prev?.createdAt ?? null,
+      lastCompletedAt: lastCompletedAt ?? prev?.lastCompletedAt ?? null,
+    };
+    if (!prev || prev.createdAt !== merged.createdAt || prev.lastCompletedAt !== merged.lastCompletedAt) {
+      dataById.set(item.id, merged);
+      changed = true;
+    }
   }
   // A row may have rendered before its data arrived — refresh shown cells.
   if (changed && enabled) scheduleApply();
@@ -296,6 +309,18 @@ function isHeaderRow(row) {
   return !!row.querySelector('[role="columnheader"]');
 }
 
+// Our columns belong only on app-list pages — paths containing an `/apps`
+// segment (the root list and `/apps/folders/<id>`) — and not on the
+// app-versions list (/apps/<id>/versions), which reuses the same `[role="row"]
+// [widths]` markup for versions, not apps. Path-checked at apply time because
+// SPA navigation can move on/off these pages without a reload.
+function isAppsPage() {
+  return (
+    /\/apps(?:\/|$)/.test(location.pathname) &&
+    !/\/apps\/[^/?#]+\/versions(?:[/?#]|$)/.test(location.pathname)
+  );
+}
+
 // Build one of our cells by cloning the Last Modified cell for styling, then
 // stripping interactive children and setting text.
 function buildCell(templateCell, role, which, text, title) {
@@ -414,6 +439,12 @@ function restoreRow(row) {
 
 function applyAll() {
   rafHandle = 0;
+  // Off apps pages (or on the app-versions list), strip anything we may have
+  // injected before navigating here and do nothing else.
+  if (!isAppsPage()) {
+    for (const row of document.querySelectorAll(`[${SRC_ATTR}]`)) restoreRow(row);
+    return;
+  }
   for (const row of document.querySelectorAll(ROW_SELECTOR)) applyRow(row);
   // If any app row is still missing its dates, the page's request likely
   // predated our capture wrapper — re-fetch it ourselves (one shot per URL).

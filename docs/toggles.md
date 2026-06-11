@@ -37,6 +37,25 @@ parameter with a row-per-filter builder (field, function, arg). Variable pills
 round-trip as `$Name$` strings; type `$Name$` directly in an arg field to
 reference a variable.
 
+### Visual filters editor v2 — `filters-builder-v2` · **default: off**
+
+Ground-up rewrite of `filters-builder` on a simpler model of Tulip's pill
+field. The field's value is an ordered token list (one `<input>` per text run,
+one `.param-pill` per variable) and pills always sit inside JSON string
+literals — the enclosing quotes live in the neighboring text tokens. So the
+canonical text form is the in-order concatenation with each pill spliced in
+as `$Label$`, with no JSON-string-state scanning. A whole-arg `$Name$` renders
+as a chip in the builder (× clears it back to a text input); typing `$Name$`
+in an arg field creates one. The token list is only how the field renders:
+its React state (probed via the component fiber) is the canonical string
+itself, owned by the nearest ancestor with `{ value: string, onChange }`
+props. Writes therefore skip token surgery entirely — the isolated half
+dispatches the new string to `toggles/filters-builder-v2-main.js` (MAIN
+world), which calls that onChange directly; Tulip re-renders inputs and pills
+from the string. Nothing is written until the user edits a builder field.
+Don't enable it together with the original — as a guard, v2 skips any row v1
+has already claimed.
+
 ### Full variable path on selection — `variable-full-path` · **default: on**
 
 In the trigger editor variable picker, when you select a nested Object field,
@@ -131,12 +150,15 @@ page-specific name shows first.
 
 ### Frequent actions on top — `action-editor-frequent` · **default: on**
 
-In the trigger action-type dropdown (`select[data-testid$="action-editor"]`),
-moves Data Manipulation, Table Records, Run Function, and Run Connector Function
-to the top under a "Frequent" group, with the rest under "All actions" in their
-original alphabetical order. The select is React-controlled, so a sibling proxy
-`<select>` is rendered in its place (the real one is hidden) and selections are
-forwarded back to React via a native value setter + bubbling change event.
+Collapses the trigger action-type dropdown (`select[data-testid$="action-editor"]`)
+to Data Manipulation, Table Records, Run Function, and Run Connector Function,
+plus a "Show all actions…" option. Picking it rebuilds the list with every
+action (frequent still pinned on top) and reopens the dropdown via
+`showPicker()`. If the current selection isn't one of the four, it stays
+visible in the collapsed list. The select is React-controlled, so a sibling
+proxy `<select>` is rendered in its place (the real one is hidden) and
+selections are forwarded back to React via a native value setter + bubbling
+change event.
 
 ### Collapse table rows — `collapse-tables-tile` · **default: off**
 
@@ -195,3 +217,13 @@ Modified cell and inserted before the trailing button columns, and the row's
 permutation when that toggle is also on, so both stay aligned). Folder rows and
 never-completed apps show an em dash. Reverts to the original grid on disable; the
 invisible capture wrapper stays. See `docs/app-list-date-columns.md`.
+
+### Dev Tools (agent debugging) — `dev-tools` · **default: off** · **developer-only**
+
+Hidden from the popup unless developer mode is on. Defines `window.__tulbelt`
+in the extension's isolated world with logging and DOM-inspection helpers
+(`log`, `snapshot`, `tree`, `watch`) used by coding agents debugging toggles
+without browser access. Run `__tulbelt.copy()` in the DevTools console (with
+the context dropdown set to **Tulbelt**) to copy a JSON report with the tenant
+hostname redacted. Never touches the page; disabling stops all watchers and
+clears the buffer. Workflow and API: [devtools.md](./devtools.md).

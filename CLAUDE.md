@@ -87,9 +87,18 @@ source of truth, and the rest is per-toggle leaves.
 
 Full recipe and rationale in `CONTRIBUTING.md`.
 
+## Debugging without a browser
+
+Claude has no browser access. To inspect live Tulip pages, write temporary
+capture code in `toggles/dev-probe.js` using the `window.__tulbelt` helpers
+and ask the user for a `__tulbelt.copy()` report. Full workflow, helper API,
+and the restore-stub-before-commit rule: `docs/devtools.md`.
+
 ## Commands
 
-No build, no test runner. Sanity checks are syntax-only:
+No build, no test runner. **Never write automated tests or test cases** —
+this extension is always tested manually by human users against a real Tulip
+instance, and a test suite would just rot. Sanity checks are syntax-only:
 
 ```sh
 node --check features.js

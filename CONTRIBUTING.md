@@ -85,6 +85,10 @@ Tulip-DOM assumptions (see `docs/expression-editor-fuzzy-main.md`).
 
 ## Testing your change
 
+Testing is manual only. Don't add automated tests, test files, or a test
+runner — every change is verified by humans against a real Tulip instance,
+and mocked DOM/API tests wouldn't reflect the real pages anyway.
+
 You need access to a Tulip instance to test against real pages.
 
 1. Load the extension unpacked (see README).
