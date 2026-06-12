@@ -1,6 +1,8 @@
 // The trigger action-type picker (`select[data-testid$="action-editor"]`) lists
-// every action alphabetically. This pins four frequent actions to the top of the
-// list, with the rest following in their original order.
+// every action alphabetically. This collapses the list to four frequent actions
+// plus a "Show all actions…" sentinel option; picking the sentinel rebuilds the
+// list with everything (frequent still pinned on top) and reopens the dropdown
+// via showPicker().
 //
 // The select is React-controlled, so we don't reorder its own nodes (React keeps
 // re-rendering and scrambling our order back). Instead — the filters-builder.js
@@ -26,6 +28,11 @@ const FREQUENT = [
   'Run Function',
   'Run Connector Function',
 ];
+
+// Sentinel option that expands the collapsed proxy to the full action list.
+// Real option values are random per-instance IDs, so this can't collide.
+const SENTINEL_VALUE = '__tulbelt-show-all__';
+const SENTINEL_LABEL = 'Show all actions…';
 
 let enabled = false;
 let observer = null;
@@ -71,7 +78,7 @@ function cloneOption(opt) {
   return o;
 }
 
-function buildProxyOptions(proxy, real) {
+function buildProxyOptions(proxy, real, expanded) {
   proxy.replaceChildren();
   const opts = Array.from(real.options);
 
@@ -92,13 +99,28 @@ function buildProxyOptions(proxy, real) {
   }
   const frequentSet = new Set(frequentOpts);
 
-  // Placeholder, then the frequent actions, then everything else in order.
+  // Placeholder, then the frequent actions.
   if (placeholder) proxy.appendChild(cloneOption(placeholder));
   for (const o of frequentOpts) proxy.appendChild(cloneOption(o));
-  for (const o of opts) {
-    if (o !== placeholder && !frequentSet.has(o)) {
-      proxy.appendChild(cloneOption(o));
+
+  if (expanded) {
+    // Everything else in its original order.
+    for (const o of opts) {
+      if (o !== placeholder && !frequentSet.has(o)) {
+        proxy.appendChild(cloneOption(o));
+      }
     }
+  } else {
+    // Keep the real select's current choice visible when it isn't frequent
+    // (e.g. editing an existing trigger), then the expand sentinel.
+    const current = opts.find((o) => o.value === real.value);
+    if (current && current !== placeholder && !frequentSet.has(current)) {
+      proxy.appendChild(cloneOption(current));
+    }
+    const more = document.createElement('option');
+    more.value = SENTINEL_VALUE;
+    more.textContent = SENTINEL_LABEL;
+    proxy.appendChild(more);
   }
 
   proxy.value = real.value;
@@ -124,10 +146,13 @@ function attach(real) {
     }
     const sig = optionsSignature(real);
     if (existing.signature !== sig) {
-      buildProxyOptions(existing.proxy, real);
+      existing.expanded = false;
+      buildProxyOptions(existing.proxy, real, existing.expanded);
       existing.signature = sig;
     } else if (existing.proxy.value !== real.value) {
-      existing.proxy.value = real.value;
+      // Rebuild rather than just assign: a collapsed proxy may not contain
+      // the real select's new value.
+      buildProxyOptions(existing.proxy, real, existing.expanded);
     }
     return;
   }
@@ -142,15 +167,32 @@ function attach(real) {
   const inlineStyle = real.getAttribute('style');
   if (inlineStyle) proxy.setAttribute('style', inlineStyle);
 
-  buildProxyOptions(proxy, real);
+  buildProxyOptions(proxy, real, false);
   proxy.addEventListener('change', () => {
+    if (proxy.value === SENTINEL_VALUE) {
+      const entry = tracked.get(real);
+      if (entry) entry.expanded = true;
+      buildProxyOptions(proxy, real, true);
+      // The native picker is still dismissing while `change` runs; a sync
+      // showPicker() gets ignored. Defer to the next task.
+      setTimeout(() => {
+        try {
+          proxy.showPicker();
+        } catch (e) {
+          // Without transient activation the list at least stays expanded
+          // for the next click.
+          console.warn('[tulbelt] reopen after expand failed:', e.message);
+        }
+      }, 0);
+      return;
+    }
     setNativeSelectValue(real, proxy.value);
   });
 
   real.parentElement.insertBefore(proxy, real.nextSibling);
   real.setAttribute(HIDDEN_ATTR, 'true');
 
-  tracked.set(real, { proxy, signature: optionsSignature(real) });
+  tracked.set(real, { proxy, signature: optionsSignature(real), expanded: false });
 }
 
 function reconcile() {
