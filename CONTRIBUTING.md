@@ -14,7 +14,7 @@ changes that add a toolchain or framework will be asked to justify themselves.
   content script (`toggles/strip-tab-title-prefix.js` is a short example) — they all
   have an explicit restore path. This is a hard requirement, not a nicety.
 - **Match the existing style.** 2-space indent, single quotes, semicolons, and
-  a top-of-file comment explaining *why* the approach works (not just what it
+  a top-of-file comment explaining _why_ the approach works (not just what it
   does). Read a couple of existing files first.
 - **No tenant-specific hostnames in git.** Do not commit real customer instance
   URLs (`<tenant>.tulip.co`). Use `*.tulip.co` in code and
@@ -32,7 +32,7 @@ changes that add a toolchain or framework will be asked to justify themselves.
   on enable, revert on disable, and re-sync on `chrome.storage.onChanged`.
 - **`background.js`** turns any feature with a `rule` into a dynamic
   `declarativeNetRequest` rule. Pure network features (redirects/blocks) need
-  *no* content script at all.
+  _no_ content script at all.
 
 ## Adding a toggle
 

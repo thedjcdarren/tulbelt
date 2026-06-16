@@ -1,27 +1,26 @@
 // Applies a dark color scheme to tulip.co via filter-inversion. The whole
 // document uses invert + contrast + brightness on <html> (no hue-rotate) so
 // restored subtrees can fully cancel with the inverse chain and stay
-// hue-faithful. Targeted color tweaks go in the TWEAKS block and are specified
-// in inverted space (the literal color the html filter will flip into the
-// final shade).
+// hue-faithful. Targeted color tweaks go at the end of DARK_CSS and are
+// specified in inverted space (the literal color the html filter will flip
+// into the final shade).
 
 (() => {
-const FEATURE_ID = 'dark-mode';
-const STORAGE_KEY = 'toggles';
-const ROOT_CLASS = 'tulbelt-dark';
-const STYLE_ID = 'tulbelt-dark-styles';
+  const FEATURE_ID = "dark-mode";
+  const STORAGE_KEY = "toggles";
+  const ROOT_CLASS = "tulbelt-dark";
+  const STYLE_ID = "tulbelt-dark-styles";
 
-const PAGE_INVERT = 'invert(1)';
-const PAGE_CONTRAST = 0.73;
-const PAGE_BRIGHTNESS = 1.16;
-const PAGE_FILTER = `${PAGE_INVERT} contrast(${PAGE_CONTRAST}) brightness(${PAGE_BRIGHTNESS})`;
-const RESTORE_FILTER = [
-  `brightness(${(1 / PAGE_BRIGHTNESS).toFixed(4)})`,
-  `contrast(${(1 / PAGE_CONTRAST).toFixed(4)})`,
-  'invert(1)',
-].join(' ');
+  const PAGE_CONTRAST = 0.73;
+  const PAGE_BRIGHTNESS = 1.16;
+  const PAGE_FILTER = `invert(1) contrast(${PAGE_CONTRAST}) brightness(${PAGE_BRIGHTNESS})`;
+  const RESTORE_FILTER = [
+    `brightness(${(1 / PAGE_BRIGHTNESS).toFixed(4)})`,
+    `contrast(${(1 / PAGE_CONTRAST).toFixed(4)})`,
+    "invert(1)",
+  ].join(" ");
 
-const DARK_CSS = `
+  const DARK_CSS = `
   html.${ROOT_CLASS} {
     filter: ${PAGE_FILTER};
     background: #fff;
@@ -63,45 +62,39 @@ const DARK_CSS = `
   html.${ROOT_CLASS} #cssCanvas [data-testid="widget"] img {
     filter: none;
   }
-
-  /* TWEAKS: targeted overrides applied on top of the inversion. Colors here
-     are specified in inverted space; the html filter will flip them into
-     the final on-screen shade. Add rules here as specific surfaces look
-     wrong after inversion. */
 `;
 
-let enabled = false;
+  let enabled = false;
 
-function ensureStyles() {
-  if (document.getElementById(STYLE_ID)) return;
-  const style = document.createElement('style');
-  style.id = STYLE_ID;
-  style.textContent = DARK_CSS;
-  (document.head || document.documentElement).appendChild(style);
-}
-
-function removeStyles() {
-  document.getElementById(STYLE_ID)?.remove();
-}
-
-async function syncFromStorage() {
-  const { [STORAGE_KEY]: stored = {} } =
-    await chrome.storage.local.get(STORAGE_KEY);
-  const next = stored[FEATURE_ID] === true;
-  if (next === enabled) return;
-  enabled = next;
-  if (enabled) {
-    ensureStyles();
-    document.documentElement.classList.add(ROOT_CLASS);
-  } else {
-    document.documentElement.classList.remove(ROOT_CLASS);
-    removeStyles();
+  function ensureStyles() {
+    if (document.getElementById(STYLE_ID)) return;
+    const style = document.createElement("style");
+    style.id = STYLE_ID;
+    style.textContent = DARK_CSS;
+    (document.head || document.documentElement).appendChild(style);
   }
-}
 
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes[STORAGE_KEY]) syncFromStorage();
-});
+  function removeStyles() {
+    document.getElementById(STYLE_ID)?.remove();
+  }
 
-syncFromStorage();
+  async function syncFromStorage() {
+    const { [STORAGE_KEY]: stored = {} } = await chrome.storage.local.get(STORAGE_KEY);
+    const next = stored[FEATURE_ID] === true;
+    if (next === enabled) return;
+    enabled = next;
+    if (enabled) {
+      ensureStyles();
+      document.documentElement.classList.add(ROOT_CLASS);
+    } else {
+      document.documentElement.classList.remove(ROOT_CLASS);
+      removeStyles();
+    }
+  }
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes[STORAGE_KEY]) syncFromStorage();
+  });
+
+  syncFromStorage();
 })();

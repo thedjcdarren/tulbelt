@@ -14,6 +14,7 @@ Inject "Recents" and "Favorites" as two additional `<li>` items at the bottom of
 ## DOM Target
 
 The popper is identified by:
+
 - `[data-testid="popper"]` on the outer wrapper
 - A `<ul>` inside it that contains an `<a>` whose `href` includes `/apps/folders` (signature check to avoid false matches on other poppers on the page)
 
@@ -26,6 +27,7 @@ Final menu order: Apps → Tables → Connectors → Functions → **Recents** �
 Standard IIFE content script. Pattern follows `reorder-row-buttons.js` and `context-menu-copy-cut.js`.
 
 **State:**
+
 - `enabled: boolean` — toggled from storage
 - `observer: MutationObserver | null` — watches `document.body` for the popper appearing/re-mounting
 

@@ -37,8 +37,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
-    sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   background: var(--bg);
   color: var(--fg);
   -webkit-font-smoothing: antialiased;
@@ -78,7 +77,9 @@ header {
   border-radius: 6px;
   color: var(--muted);
   text-decoration: none;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
 }
 
 .header-links a:hover {
@@ -151,20 +152,9 @@ header .subtitle {
   -webkit-appearance: none;
   height: 12px;
   width: 12px;
-  background: linear-gradient(
-      45deg,
-      transparent 45%,
-      var(--muted) 45%,
-      var(--muted) 55%,
-      transparent 55%
-    ),
-    linear-gradient(
-      -45deg,
-      transparent 45%,
-      var(--muted) 45%,
-      var(--muted) 55%,
-      transparent 55%
-    );
+  background:
+    linear-gradient(45deg, transparent 45%, var(--muted) 45%, var(--muted) 55%, transparent 55%),
+    linear-gradient(-45deg, transparent 45%, var(--muted) 45%, var(--muted) 55%, transparent 55%);
   cursor: pointer;
 }
 

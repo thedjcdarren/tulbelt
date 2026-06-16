@@ -45,24 +45,24 @@ All helpers are inert (return `false`/`null`) unless developer mode **and** the
 `dev-tools` toggle are both on. The buffer holds the last 500 entries, in
 memory only — nothing is ever written to `chrome.storage`.
 
-| Helper | What it does |
-|---|---|
-| `log(tag, ...args)` | Push a sanitized entry. `__tulbelt?.log?.('my-feature', 'row applied', { id })` |
-| `snapshot(target, opts?)` | For a selector or element: `{ el, rect, attrs, styles, html }`. `opts.styles` picks computed-style props (default: display/position/visibility/overflow/z-index/width/height); `opts.htmlMax` caps outerHTML (default 4000). |
-| `tree(target, depth = 3)` | Compact structural outline (`tag#id.class`, identical-sibling runs collapsed to `×N`). The fastest way to discover unfamiliar Tulip DOM. Returns the text and logs it. |
-| `watch(selector, opts?)` | Record matching elements being added/removed (MutationObserver on the whole document). `opts.events: ['click', ...]` also records capture-phase events hitting the selector; `opts.attributes: true` records attribute changes with old/new values. |
-| `unwatch(selector?)` | Stop one watcher, or all when called without arguments. |
-| `export()` / `copy()` | Build the report, redact, stash in `lastExport` (object) and `lastExportJson` (string); `copy()` also writes to the clipboard. |
-| `clear()` | Empty the buffer and reset the session clock. |
-| `enabled` | Read-only state — have the user check this first if a report comes back empty. |
+| Helper                    | What it does                                                                                                                                                                                                                                        |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `log(tag, ...args)`       | Push a sanitized entry. `__tulbelt?.log?.('my-feature', 'row applied', { id })`                                                                                                                                                                     |
+| `snapshot(target, opts?)` | For a selector or element: `{ el, rect, attrs, styles, html }`. `opts.styles` picks computed-style props (default: display/position/visibility/overflow/z-index/width/height); `opts.htmlMax` caps outerHTML (default 4000).                        |
+| `tree(target, depth = 3)` | Compact structural outline (`tag#id.class`, identical-sibling runs collapsed to `×N`). The fastest way to discover unfamiliar Tulip DOM. Returns the text and logs it.                                                                              |
+| `watch(selector, opts?)`  | Record matching elements being added/removed (MutationObserver on the whole document). `opts.events: ['click', ...]` also records capture-phase events hitting the selector; `opts.attributes: true` records attribute changes with old/new values. |
+| `unwatch(selector?)`      | Stop one watcher, or all when called without arguments.                                                                                                                                                                                             |
+| `export()` / `copy()`     | Build the report, redact, stash in `lastExport` (object) and `lastExportJson` (string); `copy()` also writes to the clipboard.                                                                                                                      |
+| `clear()`                 | Empty the buffer and reset the session clock.                                                                                                                                                                                                       |
+| `enabled`                 | Read-only state — have the user check this first if a report comes back empty.                                                                                                                                                                      |
 
 Typical probe (`toggles/dev-probe.js` body):
 
 ```js
 (() => {
-  window.__tulbelt?.log?.('probe', 'loaded', { path: location.pathname });
-  __tulbelt.watch('[data-testid*="trigger"]', { events: ['click'], attributes: true });
-  setTimeout(() => __tulbelt.tree('main', 4), 3000);
+  window.__tulbelt?.log?.("probe", "loaded", { path: location.pathname });
+  __tulbelt.watch('[data-testid*="trigger"]', { events: ["click"], attributes: true });
+  setTimeout(() => __tulbelt.tree("main", 4), 3000);
 })();
 ```
 
@@ -71,12 +71,20 @@ Typical probe (`toggles/dev-probe.js` body):
 ```json
 {
   "meta": {
-    "exportedAt": "…", "version": "1.0.3",
+    "exportedAt": "…",
+    "version": "1.0.3",
     "url": "/w/DEFAULT/apps",
-    "sessionMs": 12345, "entryCount": 42,
+    "sessionMs": 12345,
+    "entryCount": 42,
     "toggles": { "dark-mode": true, "…": false }
   },
-  "entries": [ { "t": 1042, "tag": "watch:[role=\"row\"]", "data": { "op": "added", "el": { "tag": "div", "class": "…" } } } ]
+  "entries": [
+    {
+      "t": 1042,
+      "tag": "watch:[role=\"row\"]",
+      "data": { "op": "added", "el": { "tag": "div", "class": "…" } }
+    }
+  ]
 }
 ```
 
@@ -100,9 +108,11 @@ MAIN-world scripts can't see the isolated-world global. While Dev Tools is on,
 Temporary MAIN-world probe code logs with:
 
 ```js
-document.dispatchEvent(new CustomEvent('tulbelt:devlog', {
-  detail: JSON.stringify({ tag: 'my-main-probe', data: { found: 3 } }),
-}));
+document.dispatchEvent(
+  new CustomEvent("tulbelt:devlog", {
+    detail: JSON.stringify({ tag: "my-main-probe", data: { found: 3 } }),
+  }),
+);
 ```
 
 The detail **must be a JSON string** — object details don't reliably cross the

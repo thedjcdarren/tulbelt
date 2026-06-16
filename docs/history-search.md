@@ -1,14 +1,14 @@
 # App & Table history search (`history-search.js`)
 
-Toggle `history-search` ("App & Table History (Ctrl+L)"). One isolated-world
-content script that logs the apps and tables you open and adds a **Ctrl+L**
+Toggle `history-search` ("App & Table History (⌘K / Ctrl+K)"). One isolated-world
+content script that logs the apps and tables you open and adds a **⌘K/Ctrl+K**
 search palette to jump back to any of them. Ships on by default.
 
 ## Two concerns
 
 - **Recorder** — watches SPA navigations and records the current page when it is
   an app editor or a table.
-- **Palette** — a shadow-DOM overlay opened on Ctrl+L that substring-filters the
+- **Palette** — a shadow-DOM overlay opened on ⌘K/Ctrl+K that substring-filters the
   recorded history (by name + folder) and navigates to the chosen entry.
 
 ## Storage
@@ -34,7 +34,7 @@ Writes re-read before writing so two tabs don't clobber each other's history.
 
 The human-readable fields come from the breadcrumb DOM:
 `[data-testid="subheader-title"] h1` (name),
-`a[data-testid="subheader-breadcrumb"]` joined by ` / ` (folder path), and
+`a[data-testid="subheader-breadcrumb"]` joined by `/` (folder path), and
 `[data-testid="subheader-root-breadcrumb"]` ("Apps" / "Tables").
 
 ### Why "wait for the title to settle"
@@ -57,13 +57,16 @@ keeps the **most recently seen** full URL for that key (the recorder uses
 When enabled, a magnifier icon is injected to the **left** of the global header
 actions (before `#factory-recent-activity` — recent activity, help, settings).
 It clones the neighboring wrapper/button structure so Tulip's styled-component
-classes and tooltip hooks match. Click toggles the same palette as **Ctrl+L**.
+classes and tooltip hooks match. Click toggles the same palette as **⌘K/Ctrl+K**.
 The button is removed on disable (tagged with `data-tulbelt-history-nav`).
 
 ## Palette behavior
 
-- **Ctrl+L** toggles the overlay (capture-phase `keydown` on `window`,
-  `preventDefault` + `stopPropagation`). **Esc** / backdrop click closes.
+- **⌘K** (Ctrl+K on Windows/Linux) toggles the overlay (capture-phase `keydown`
+  on `window`, `preventDefault` + `stopPropagation`). The modifier is chosen by
+  `isMacLike()` — `metaKey` on Mac, `ctrlKey` elsewhere — and the opposite
+  modifier is rejected so ⌘K and Ctrl+K don't both fire on Mac. **Esc** /
+  backdrop click closes.
 - Substring filter over `name + folder`, results ordered by recency.
 - Arrow keys move the selection; **Enter** opens in the current tab,
   **Ctrl/Cmd+Enter** opens a new tab. Click opens (same tab); middle-click or
@@ -86,13 +89,13 @@ secondary gray line under each name.
 
 `syncFromStorage()` removes the keydown listener, disconnects the observers,
 clears the poll interval, removes the navbar search button, and removes the
-shadow-DOM host — Ctrl+L returns to its native browser behavior with no page
+shadow-DOM host — the hotkey returns to its native browser behavior with no page
 reload. Recorded history is **left in storage** (it's data, not a page
 mutation), so re-enabling restores the list.
 
 ## Known caveats
 
-- **Ctrl+L override** only fires when the page has focus. If focus is already in
+- **Hotkey override** only fires when the page has focus. If focus is already in
   the browser address bar, the browser keeps it — inherent to content-script key
   interception.
 - **Dark mode interaction**: the `dark-mode` toggle inverts the whole document

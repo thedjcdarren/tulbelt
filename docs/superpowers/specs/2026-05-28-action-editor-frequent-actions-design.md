@@ -12,7 +12,7 @@ dozens of rarely-used ones.
 
 Pin those four frequent actions to the top of the dropdown, under a "Frequent"
 group, with everything else under an "All actions" group. Each action appears
-exactly once (the four are *moved* to the top, not duplicated).
+exactly once (the four are _moved_ to the top, not duplicated).
 
 Success: opening the action picker shows the four frequent actions first under a
 "Frequent" header, then the remaining actions in their original alphabetical

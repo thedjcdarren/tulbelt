@@ -52,52 +52,52 @@
 //   data attribute and shown only when collapsed.
 
 (() => {
-const FEATURE_ID = 'collapse-tables-tile';
-const STORAGE_KEY = 'toggles';
-const STYLE_ID = 'tulbelt-collapse-tables-tile-styles';
-const APP_EDITOR_PATH_RE = /^(?:\/w\/[^/]+)?\/apps\/[^/]+\/versions\/[^/]+/;
+  const FEATURE_ID = "collapse-tables-tile";
+  const STORAGE_KEY = "toggles";
+  const STYLE_ID = "tulbelt-collapse-tables-tile-styles";
+  const APP_EDITOR_PATH_RE = /^(?:\/w\/[^/]+)?\/apps\/[^/]+\/versions\/[^/]+/;
 
-const ROW_ATTR = 'data-tulbelt-tbl-row';                 // "collapsed" | "expanded"
-const CONTENT_ATTR = 'data-tulbelt-tbl-content';         // on the row content wrapper
-const NAME_ATTR = 'data-tulbelt-tbl-name';               // on the table-name button div
-const COUNTS_ATTR = 'data-tulbelt-tbl-counts';           // on the table-name div; CSS ::after reads it
-const CARET_ATTR = 'data-tulbelt-tbl-caret';             // on the inserted caret element
-const TILE_ATTR = 'data-tulbelt-tbl-tile';               // on the rows' shared parent (the Tables tile container)
-const ATTRS = [ROW_ATTR, CONTENT_ATTR, NAME_ATTR, COUNTS_ATTR, CARET_ATTR, TILE_ATTR];
+  const ROW_ATTR = "data-tulbelt-tbl-row"; // "collapsed" | "expanded"
+  const CONTENT_ATTR = "data-tulbelt-tbl-content"; // on the row content wrapper
+  const NAME_ATTR = "data-tulbelt-tbl-name"; // on the table-name button div
+  const COUNTS_ATTR = "data-tulbelt-tbl-counts"; // on the table-name div; CSS ::after reads it
+  const CARET_ATTR = "data-tulbelt-tbl-caret"; // on the inserted caret element
+  const TILE_ATTR = "data-tulbelt-tbl-tile"; // on the rows' shared parent (the Tables tile container)
+  const ATTRS = [ROW_ATTR, CONTENT_ATTR, NAME_ATTR, COUNTS_ATTR, CARET_ATTR, TILE_ATTR];
 
-let enabled = false;
-let observer = null;
-let applyScheduled = false;
+  let enabled = false;
+  let observer = null;
+  let applyScheduled = false;
 
-function isAppEditorUrl() {
-  return APP_EDITOR_PATH_RE.test(location.pathname || '');
-}
+  function isAppEditorUrl() {
+    return APP_EDITOR_PATH_RE.test(location.pathname || "");
+  }
 
-function installHistoryLocationHooks() {
-  window.addEventListener('popstate', () => queueMicrotask(onLocationMaybeChanged));
-  window.addEventListener('tulbelt:navigate', () => queueMicrotask(onLocationMaybeChanged));
-  if (window.__tulbeltHistoryHooked) return;
-  window.__tulbeltHistoryHooked = true;
-  const { pushState, replaceState } = history;
-  history.pushState = function patchedPushState(...args) {
-    const r = pushState.apply(this, args);
-    window.dispatchEvent(new CustomEvent('tulbelt:navigate'));
-    return r;
-  };
-  history.replaceState = function patchedReplaceState(...args) {
-    const r = replaceState.apply(this, args);
-    window.dispatchEvent(new CustomEvent('tulbelt:navigate'));
-    return r;
-  };
-}
+  function installHistoryLocationHooks() {
+    window.addEventListener("popstate", () => queueMicrotask(onLocationMaybeChanged));
+    window.addEventListener("tulbelt:navigate", () => queueMicrotask(onLocationMaybeChanged));
+    if (window.__tulbeltHistoryHooked) return;
+    window.__tulbeltHistoryHooked = true;
+    const { pushState, replaceState } = history;
+    history.pushState = function patchedPushState(...args) {
+      const r = pushState.apply(this, args);
+      window.dispatchEvent(new CustomEvent("tulbelt:navigate"));
+      return r;
+    };
+    history.replaceState = function patchedReplaceState(...args) {
+      const r = replaceState.apply(this, args);
+      window.dispatchEvent(new CustomEvent("tulbelt:navigate"));
+      return r;
+    };
+  }
 
-installHistoryLocationHooks();
+  installHistoryLocationHooks();
 
-function ensureStyles() {
-  if (document.getElementById(STYLE_ID)) return;
-  const style = document.createElement('style');
-  style.id = STYLE_ID;
-  style.textContent = `
+  function ensureStyles() {
+    if (document.getElementById(STYLE_ID)) return;
+    const style = document.createElement("style");
+    style.id = STYLE_ID;
+    style.textContent = `
 [${TILE_ATTR}="true"] {
   overflow-x: clip;
 }
@@ -158,218 +158,212 @@ function ensureStyles() {
   pointer-events: none;
   white-space: pre-line;
 }`;
-  (document.head || document.documentElement).appendChild(style);
-}
-
-function removeStyles() {
-  document.getElementById(STYLE_ID)?.remove();
-}
-
-function countPlaceholders(content) {
-  return content.querySelectorAll(
-    `div[aria-haspopup="menu"]:not([${NAME_ATTR}]) > button[title]`,
-  ).length;
-}
-
-function countAggregations(content) {
-  // Aggregation buttons have no `title` (text is in a nested div) and no `id`
-  // (the inline "Add Aggregation" button has `id="add-agg-…"`).
-  return content.querySelectorAll(
-    'div[aria-haspopup="menu"] > button:not([title]):not([id])',
-  ).length;
-}
-
-function buildCountsLabel(placeholders, aggregations) {
-  const parts = [];
-  if (placeholders > 0) {
-    parts.push(`· ${placeholders} placeholder${placeholders === 1 ? '' : 's'}`);
+    (document.head || document.documentElement).appendChild(style);
   }
-  if (aggregations > 0) {
-    parts.push(`· ${aggregations} aggregation${aggregations === 1 ? '' : 's'}`);
-  }
-  // Newline-separated; CSS `white-space: pre-line` on the ::after renders
-  // each part on its own line.
-  return parts.join('\n');
-}
 
-function updateCountsFor(content) {
-  const nameDiv = content.querySelector(`:scope > [${NAME_ATTR}="true"]`);
-  if (!nameDiv) return;
-  const label = buildCountsLabel(
-    countPlaceholders(content),
-    countAggregations(content),
-  );
-  if (label) {
-    if (nameDiv.getAttribute(COUNTS_ATTR) !== label) {
-      nameDiv.setAttribute(COUNTS_ATTR, label);
+  function removeStyles() {
+    document.getElementById(STYLE_ID)?.remove();
+  }
+
+  function countPlaceholders(content) {
+    return content.querySelectorAll(`div[aria-haspopup="menu"]:not([${NAME_ATTR}]) > button[title]`)
+      .length;
+  }
+
+  function countAggregations(content) {
+    // Aggregation buttons have no `title` (text is in a nested div) and no `id`
+    // (the inline "Add Aggregation" button has `id="add-agg-…"`).
+    return content.querySelectorAll('div[aria-haspopup="menu"] > button:not([title]):not([id])')
+      .length;
+  }
+
+  function buildCountsLabel(placeholders, aggregations) {
+    const parts = [];
+    if (placeholders > 0) {
+      parts.push(`· ${placeholders} placeholder${placeholders === 1 ? "" : "s"}`);
     }
-  } else if (nameDiv.hasAttribute(COUNTS_ATTR)) {
-    nameDiv.removeAttribute(COUNTS_ATTR);
-  }
-}
-
-function ensureCaret(row) {
-  // Caret must be the last child of the row so `margin-left: auto` pushes
-  // it to the right edge. If React re-rendered the row's children and
-  // either removed our caret or inserted something after it, fix that up.
-  let caret = row.querySelector(`:scope > [${CARET_ATTR}]`);
-  if (!caret) {
-    caret = document.createElement('div');
-    caret.setAttribute(CARET_ATTR, 'true');
-    caret.setAttribute('role', 'button');
-    caret.setAttribute('aria-label', 'Toggle table row');
-    row.appendChild(caret);
-  } else if (caret !== row.lastElementChild) {
-    row.appendChild(caret);
-  }
-}
-
-function applyAll() {
-  if (!isAppEditorUrl()) {
-    restoreAll();
-    return;
-  }
-  const queryButtons = document.querySelectorAll('button[id^="add-query-"]');
-  for (const qb of queryButtons) {
-    const queryRow = qb.parentElement;        // .gTBAGM Query inline row
-    const content = queryRow?.parentElement;  // table-row content wrapper
-    const row = content?.parentElement;       // table row
-    if (!row || !content) continue;
-
-    if (!row.hasAttribute(ROW_ATTR)) {
-      // The first `[aria-haspopup="menu"]` child of the content wrapper is
-      // the table-name button — that's what stays visible when collapsed.
-      // Linked record buttons share the same aria attribute but come later
-      // in the child order, so `:scope > [aria-haspopup="menu"]` picks the
-      // right one.
-      const nameBtn = content.querySelector(':scope > [aria-haspopup="menu"]');
-      if (!nameBtn) continue;
-
-      content.setAttribute(CONTENT_ATTR, 'true');
-      nameBtn.setAttribute(NAME_ATTR, 'true');
-      row.setAttribute(ROW_ATTR, 'collapsed');
+    if (aggregations > 0) {
+      parts.push(`· ${aggregations} aggregation${aggregations === 1 ? "" : "s"}`);
     }
-
-    const tile = row.parentElement;
-    if (tile && !tile.hasAttribute(TILE_ATTR)) {
-      tile.setAttribute(TILE_ATTR, 'true');
-    }
-
-    ensureCaret(row);
-    updateCountsFor(content);
+    // Newline-separated; CSS `white-space: pre-line` on the ::after renders
+    // each part on its own line.
+    return parts.join("\n");
   }
-}
 
-function restoreAll() {
-  for (const caret of document.querySelectorAll(`[${CARET_ATTR}]`)) {
-    caret.remove();
-  }
-  for (const attr of ATTRS) {
-    for (const el of document.querySelectorAll(`[${attr}]`)) {
-      el.removeAttribute(attr);
+  function updateCountsFor(content) {
+    const nameDiv = content.querySelector(`:scope > [${NAME_ATTR}="true"]`);
+    if (!nameDiv) return;
+    const label = buildCountsLabel(countPlaceholders(content), countAggregations(content));
+    if (label) {
+      if (nameDiv.getAttribute(COUNTS_ATTR) !== label) {
+        nameDiv.setAttribute(COUNTS_ATTR, label);
+      }
+    } else if (nameDiv.hasAttribute(COUNTS_ATTR)) {
+      nameDiv.removeAttribute(COUNTS_ATTR);
     }
   }
-}
 
-function onClick(e) {
-  if (!enabled) return;
-  const caret = e.target.closest?.(`[${CARET_ATTR}]`);
-  if (!caret) return;
-  const row = caret.closest(`[${ROW_ATTR}]`);
-  if (!row) return;
-  e.preventDefault();
-  e.stopPropagation();
-  row.setAttribute(
-    ROW_ATTR,
-    row.getAttribute(ROW_ATTR) === 'collapsed' ? 'expanded' : 'collapsed',
-  );
-}
-
-function scheduleApply() {
-  if (applyScheduled) return;
-  applyScheduled = true;
-  requestAnimationFrame(() => {
-    applyScheduled = false;
-    applyAll();
-  });
-}
-
-function mutationTouchesTarget(mutation) {
-  // New table appearing OR placeholder/aggregation/query item added or
-  // removed OR our caret got stripped by a React re-render. All three Tulip
-  // item types carry `aria-haspopup="menu"`; new tables bring an
-  // `add-query-*` button.
-  for (const node of mutation.addedNodes) {
-    if (!(node instanceof Element)) continue;
-    if (
-      node.matches?.('button[id^="add-query-"]') ||
-      node.querySelector?.('button[id^="add-query-"]') ||
-      node.matches?.('[aria-haspopup="menu"]') ||
-      node.querySelector?.('[aria-haspopup="menu"]')
-    ) {
-      return true;
+  function ensureCaret(row) {
+    // Caret must be the last child of the row so `margin-left: auto` pushes
+    // it to the right edge. If React re-rendered the row's children and
+    // either removed our caret or inserted something after it, fix that up.
+    let caret = row.querySelector(`:scope > [${CARET_ATTR}]`);
+    if (!caret) {
+      caret = document.createElement("div");
+      caret.setAttribute(CARET_ATTR, "true");
+      caret.setAttribute("role", "button");
+      caret.setAttribute("aria-label", "Toggle table row");
+      row.appendChild(caret);
+    } else if (caret !== row.lastElementChild) {
+      row.appendChild(caret);
     }
   }
-  for (const node of mutation.removedNodes) {
-    if (!(node instanceof Element)) continue;
-    if (
-      node.matches?.(`[${CARET_ATTR}]`) ||
-      node.matches?.('[aria-haspopup="menu"]') ||
-      node.querySelector?.('[aria-haspopup="menu"]')
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
 
-function onMutation(mutations) {
-  for (const m of mutations) {
-    if (mutationTouchesTarget(m)) {
-      scheduleApply();
+  function applyAll() {
+    if (!isAppEditorUrl()) {
+      restoreAll();
       return;
     }
+    const queryButtons = document.querySelectorAll('button[id^="add-query-"]');
+    for (const qb of queryButtons) {
+      const queryRow = qb.parentElement; // .gTBAGM Query inline row
+      const content = queryRow?.parentElement; // table-row content wrapper
+      const row = content?.parentElement; // table row
+      if (!row || !content) continue;
+
+      if (!row.hasAttribute(ROW_ATTR)) {
+        // The first `[aria-haspopup="menu"]` child of the content wrapper is
+        // the table-name button — that's what stays visible when collapsed.
+        // Linked record buttons share the same aria attribute but come later
+        // in the child order, so `:scope > [aria-haspopup="menu"]` picks the
+        // right one.
+        const nameBtn = content.querySelector(':scope > [aria-haspopup="menu"]');
+        if (!nameBtn) continue;
+
+        content.setAttribute(CONTENT_ATTR, "true");
+        nameBtn.setAttribute(NAME_ATTR, "true");
+        row.setAttribute(ROW_ATTR, "collapsed");
+      }
+
+      const tile = row.parentElement;
+      if (tile && !tile.hasAttribute(TILE_ATTR)) {
+        tile.setAttribute(TILE_ATTR, "true");
+      }
+
+      ensureCaret(row);
+      updateCountsFor(content);
+    }
   }
-}
 
-function onLocationMaybeChanged() {
-  if (!enabled) return;
-  applyAll();
-}
+  function restoreAll() {
+    for (const caret of document.querySelectorAll(`[${CARET_ATTR}]`)) {
+      caret.remove();
+    }
+    for (const attr of ATTRS) {
+      for (const el of document.querySelectorAll(`[${attr}]`)) {
+        el.removeAttribute(attr);
+      }
+    }
+  }
 
-function startObserver() {
-  if (observer) return;
-  observer = new MutationObserver(onMutation);
-  observer.observe(document.body, { childList: true, subtree: true });
-}
+  function onClick(e) {
+    if (!enabled) return;
+    const caret = e.target.closest?.(`[${CARET_ATTR}]`);
+    if (!caret) return;
+    const row = caret.closest(`[${ROW_ATTR}]`);
+    if (!row) return;
+    e.preventDefault();
+    e.stopPropagation();
+    row.setAttribute(
+      ROW_ATTR,
+      row.getAttribute(ROW_ATTR) === "collapsed" ? "expanded" : "collapsed",
+    );
+  }
 
-function stopObserver() {
-  observer?.disconnect();
-  observer = null;
-}
+  function scheduleApply() {
+    if (applyScheduled) return;
+    applyScheduled = true;
+    requestAnimationFrame(() => {
+      applyScheduled = false;
+      applyAll();
+    });
+  }
 
-async function syncFromStorage() {
-  const { [STORAGE_KEY]: stored = {} } =
-    await chrome.storage.local.get(STORAGE_KEY);
-  const next = stored[FEATURE_ID] === true;
-  if (next === enabled) return;
-  enabled = next;
-  if (enabled) {
-    ensureStyles();
-    document.addEventListener('click', onClick, true);
+  function mutationTouchesTarget(mutation) {
+    // New table appearing OR placeholder/aggregation/query item added or
+    // removed OR our caret got stripped by a React re-render. All three Tulip
+    // item types carry `aria-haspopup="menu"`; new tables bring an
+    // `add-query-*` button.
+    for (const node of mutation.addedNodes) {
+      if (!(node instanceof Element)) continue;
+      if (
+        node.matches?.('button[id^="add-query-"]') ||
+        node.querySelector?.('button[id^="add-query-"]') ||
+        node.matches?.('[aria-haspopup="menu"]') ||
+        node.querySelector?.('[aria-haspopup="menu"]')
+      ) {
+        return true;
+      }
+    }
+    for (const node of mutation.removedNodes) {
+      if (!(node instanceof Element)) continue;
+      if (
+        node.matches?.(`[${CARET_ATTR}]`) ||
+        node.matches?.('[aria-haspopup="menu"]') ||
+        node.querySelector?.('[aria-haspopup="menu"]')
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function onMutation(mutations) {
+    for (const m of mutations) {
+      if (mutationTouchesTarget(m)) {
+        scheduleApply();
+        return;
+      }
+    }
+  }
+
+  function onLocationMaybeChanged() {
+    if (!enabled) return;
     applyAll();
-    startObserver();
-  } else {
-    stopObserver();
-    document.removeEventListener('click', onClick, true);
-    restoreAll();
-    removeStyles();
   }
-}
 
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes[STORAGE_KEY]) syncFromStorage();
-});
+  function startObserver() {
+    if (observer) return;
+    observer = new MutationObserver(onMutation);
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
 
-syncFromStorage();
+  function stopObserver() {
+    observer?.disconnect();
+    observer = null;
+  }
+
+  async function syncFromStorage() {
+    const { [STORAGE_KEY]: stored = {} } = await chrome.storage.local.get(STORAGE_KEY);
+    const next = stored[FEATURE_ID] === true;
+    if (next === enabled) return;
+    enabled = next;
+    if (enabled) {
+      ensureStyles();
+      document.addEventListener("click", onClick, true);
+      applyAll();
+      startObserver();
+    } else {
+      stopObserver();
+      document.removeEventListener("click", onClick, true);
+      restoreAll();
+      removeStyles();
+    }
+  }
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes[STORAGE_KEY]) syncFromStorage();
+  });
+
+  syncFromStorage();
 })();

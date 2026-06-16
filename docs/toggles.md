@@ -10,9 +10,9 @@ if the two ever disagree, `features.js` wins.
 the popup at any time, and every toggle cleanly reverts when switched off.
 
 Toggles are split into **major** and **minor** by relative implementation
-complexity — not by how useful they are. *Major* toggles are large, stateful,
+complexity — not by how useful they are. _Major_ toggles are large, stateful,
 or reach deep into Tulip's React internals (hundreds to ~1500 lines, sometimes
-across two script worlds). *Minor* toggles are small, self-contained DOM/CSS
+across two script worlds). _Minor_ toggles are small, self-contained DOM/CSS
 tweaks or a declarative redirect.
 
 ## Major toggles
@@ -30,31 +30,24 @@ as before. The heaviest feature in the extension: a two-world (isolated + MAIN)
 script pair that reads Tulip's full suggestion catalog from React fibers. Deep
 dive: [expression-editor-fuzzy-main.md](./expression-editor-fuzzy-main.md).
 
-### Visual filters editor — `filters-builder` · **default: off**
+### Visual filters editor — `filters-builder` · **default: on**
 
 On connector function pages, replaces the JSON text box for the `filters` query
-parameter with a row-per-filter builder (field, function, arg). Variable pills
-round-trip as `$Name$` strings; type `$Name$` directly in an arg field to
-reference a variable.
-
-### Visual filters editor v2 — `filters-builder-v2` · **default: off**
-
-Ground-up rewrite of `filters-builder` on a simpler model of Tulip's pill
-field. The field's value is an ordered token list (one `<input>` per text run,
-one `.param-pill` per variable) and pills always sit inside JSON string
-literals — the enclosing quotes live in the neighboring text tokens. So the
-canonical text form is the in-order concatenation with each pill spliced in
-as `$Label$`, with no JSON-string-state scanning. A whole-arg `$Name$` renders
-as a chip in the builder (× clears it back to a text input); typing `$Name$`
-in an arg field creates one. The token list is only how the field renders:
-its React state (probed via the component fiber) is the canonical string
-itself, owned by the nearest ancestor with `{ value: string, onChange }`
-props. Writes therefore skip token surgery entirely — the isolated half
-dispatches the new string to `toggles/filters-builder-v2-main.js` (MAIN
-world), which calls that onChange directly; Tulip re-renders inputs and pills
-from the string. Nothing is written until the user edits a builder field.
-Don't enable it together with the original — as a guard, v2 skips any row v1
-has already claimed.
+parameter with a row-per-filter builder (field, function, arg), built on a
+model of Tulip's pill field. The field's value is an ordered token list (one
+`<input>` per text run, one `.param-pill` per variable) and pills always sit
+inside JSON string literals — the enclosing quotes live in the neighboring text
+tokens. So the canonical text form is the in-order concatenation with each pill
+spliced in as `$Label$`, with no JSON-string-state scanning. A whole-arg
+`$Name$` renders as a chip in the builder (× clears it back to a text input);
+typing `$Name$` in an arg field creates one. The token list is only how the
+field renders: its React state (probed via the component fiber) is the
+canonical string itself, owned by the nearest ancestor with
+`{ value: string, onChange }` props. Writes therefore skip token surgery
+entirely — the isolated half dispatches the new string to
+`toggles/filters-builder-main.js` (MAIN world), which calls that onChange
+directly; Tulip re-renders inputs and pills from the string. Nothing is written
+until the user edits a builder field.
 
 ### Full variable path on selection — `variable-full-path` · **default: on**
 
@@ -63,13 +56,11 @@ rewrites the trigger button label from the leaf name only to the full ancestor
 path (`Parent → Child → Leaf`). Uses indent depth in the virtualised dropdown
 (and optional disabled group-header rows) to reconstruct the hierarchy.
 
-### Expand all variable paths — `expand-all-variable-paths` · **default: on**
-
-Adds an **Expand paths** control in the app editor toolbar (beside the copy-link
-icon). Walks every "Select new variable or array" trigger on the page, briefly
-opens each dropdown to read the selected item's hierarchy, then patches labels
-the same way as `variable-full-path`. Skips top-level variables and buttons
-already expanded.
+When the trigger editor opens (detected via the "Copy link to trigger" button),
+it also runs a one-time pass that briefly opens each already-selected variable
+trigger to read its hierarchy and patch the label, so variables chosen before
+the toggle ran are expanded too. Skips top-level variables and already-patched
+buttons.
 
 ### Copy/Cut in widget menu — `context-menu-copy-cut` · **default: on**
 

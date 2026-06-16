@@ -5,14 +5,14 @@
 // Old toggles merged into `compact-app-editor-header`. Kept here so getToggles
 // can migrate existing users once.
 export const LEGACY_COMPACT_APP_EDITOR_HEADER_IDS = [
-  'hide-app-editor-palette-icons',
-  'hide-subheader-workspace-label',
+  "hide-app-editor-palette-icons",
+  "hide-subheader-workspace-label",
 ];
 
 export const FEATURES = [
   {
-    id: 'table-default-sort',
-    name: 'Sort Tables New to Old',
+    id: "table-default-sort",
+    name: "Sort Tables New to Old",
     description:
       'On the tables page, redirects to a URL that sorts by _createdAt descending. Also fixes the browser Back button, which this redirect otherwise made "go to itself".',
     defaultEnabled: true,
@@ -23,101 +23,97 @@ export const FEATURES = [
         // so it always participates — Chrome DNR's regexSubstitution silently
         // drops the redirect when a backreference targets a non-participating
         // optional group.
-        regexFilter:
-          '^https://([^/]+)\\.tulip\\.co((?:/w/[^/]+)?/table/[^?]+)$',
-        resourceTypes: ['main_frame'],
+        regexFilter: "^https://([^/]+)\\.tulip\\.co((?:/w/[^/]+)?/table/[^?]+)$",
+        resourceTypes: ["main_frame"],
       },
       action: {
-        type: 'redirect',
+        type: "redirect",
         redirect: {
           regexSubstitution:
-            'https://\\1.tulip.co\\2?sortOptions=%5B%7B%22sortBy%22%3A%22_createdAt%22%2C%22sortDir%22%3A%22desc%22%7D%5D&offset=0',
+            "https://\\1.tulip.co\\2?sortOptions=%5B%7B%22sortBy%22%3A%22_createdAt%22%2C%22sortDir%22%3A%22desc%22%7D%5D&offset=0",
         },
       },
     },
   },
   {
-    id: 'reorder-row-buttons',
-    name: 'Quicker App Button Access',
+    id: "reorder-row-buttons",
+    name: "Quicker App Button Access",
     description:
-      'On app and folder lists, move the edit and actions buttons next to each row’s name instead of the far right.',
+      "On app and folder lists, move the edit and actions buttons next to each row’s name instead of the far right.",
     defaultEnabled: true,
     major: false,
   },
   {
-    id: 'auto-snapshot',
-    name: 'Auto-Snapshot Every 15 Minutes',
+    id: "auto-snapshot",
+    name: "Auto-Snapshot Every 15 Minutes",
     description:
-      'Track active editing time per app and automatically create a snapshot every 15 minutes of activity.',
+      "Track active editing time per app and automatically create a snapshot every 15 minutes of activity.",
     defaultEnabled: true,
     major: true,
   },
   {
-    id: 'hide-legacy-tiles',
-    name: 'Hide Minor Legacy Features',
+    id: "hide-legacy-tiles",
+    name: "Hide Minor Legacy Features",
     description:
-      'In the app editor context pane, hide deprecated tiles: Step cycle time, Step comments, Process cycle time, and App comments.',
+      "In the app editor context pane, hide deprecated tiles: Step cycle time, Step comments, Process cycle time, and App comments.",
     defaultEnabled: true,
     major: false,
   },
   {
-    id: 'disable-tooltips',
-    name: 'Disable Copy Hover Tooltips',
-    description:
-      'Suppress the tooltip pop-ups on hover-only action buttons which cause misclicks.',
+    id: "disable-tooltips",
+    name: "Disable Copy Hover Tooltips",
+    description: "Suppress the tooltip pop-ups on hover-only action buttons which cause misclicks.",
     defaultEnabled: true,
-    major: true,
+    major: false,
   },
   {
-    id: 'hide-view-only-triggers',
-    name: 'Hide Base Layout Triggers',
-    description:
-      'In the trigger editor, hide inherited base-layout triggers.',
-    defaultEnabled: true,
-    major: true,
-  },
-  {
-    id: 'move-variables-to-toolbar',
-    name: 'Variables Button to Toolbar',
-    description:
-      'Move the Variables tile in the app editor context pane to the top toolbar.',
-    defaultEnabled: true,
-    major: true,
-  },
-  {
-    id: 'dark-mode',
-    name: 'Dark Mode',
-    description:
-      'Apply a dark color scheme to tulip.co via filter-inversion (invert, contrast, brightness on the document; restored regions use the exact inverse so previews, canvas, images, and video stay hue-faithful). Targeted tweaks for specific surfaces are layered on top.',
+    id: "hide-view-only-triggers",
+    name: "Hide Base Layout Triggers",
+    description: "In the trigger editor, hide inherited base-layout triggers.",
     defaultEnabled: false,
     major: true,
   },
   {
-    id: 'hide-app-editor-chrome',
-    name: 'Full Screen Editor',
-    description:
-      'On app version editor pages only (`/w/…/apps/…/versions/…`), hide the site header, subheader row (breadcrumbs, Run/Publish), and Add/Icons palette.',
-    defaultEnabled: false,
-    major: true,
-  },
-  {
-    id: 'compact-app-editor-header',
-    name: 'Slim App Editor Header',
-    description:
-      'In the app editor: hide the workspace name beside breadcrumbs; hide leading icons on palette buttons (Add, Icons, …, Forward/Back); tighten vertical padding on the subheader and palette rows.',
-    defaultEnabled: false,
-    major: true,
-  },
-  {
-    id: 'context-menu-copy-cut',
-    name: 'Right Click -> Copy Widget',
-    description:
-      'In the app editor canvas widget context menu (Delete / Move To Front / Back), add Copy (Ctrl+C) and Cut (Ctrl+X) rows that trigger those shortcuts when clicked.',
+    id: "move-variables-to-toolbar",
+    name: "Variables Button to Toolbar",
+    description: "Move the Variables tile in the app editor context pane to the top toolbar.",
     defaultEnabled: true,
     major: true,
   },
   {
-    id: 'strip-tab-title-prefix',
+    id: "dark-mode",
+    name: "Dark Mode",
+    description:
+      "Apply a dark color scheme to tulip.co via filter-inversion (invert, contrast, brightness on the document; restored regions use the exact inverse so previews, canvas, images, and video stay hue-faithful). Targeted tweaks for specific surfaces are layered on top.",
+    defaultEnabled: false,
+    major: true,
+  },
+  {
+    id: "hide-app-editor-chrome",
+    name: "Full Screen Editor",
+    description:
+      "On app version editor pages only (`/w/…/apps/…/versions/…`), hide the site header, subheader row (breadcrumbs, Run/Publish), and Add/Icons palette.",
+    defaultEnabled: false,
+    major: true,
+  },
+  {
+    id: "compact-app-editor-header",
+    name: "Slim App Editor Header",
+    description:
+      "In the app editor: hide the workspace name beside breadcrumbs; hide leading icons on palette buttons (Add, Icons, …, Forward/Back); tighten vertical padding on the subheader and palette rows.",
+    defaultEnabled: true,
+    major: true,
+  },
+  {
+    id: "context-menu-copy-cut",
+    name: "Right Click -> Copy Widget",
+    description:
+      "In the app editor canvas widget context menu (Delete / Move To Front / Back), add Copy (Ctrl+C) and Cut (Ctrl+X) rows that trigger those shortcuts when clicked.",
+    defaultEnabled: true,
+    major: true,
+  },
+  {
+    id: "strip-tab-title-prefix",
     name: 'Strip "Tulip | " from Tab Titles',
     description:
       'Remove the leading "Tulip | " prefix from browser tab/window titles so the page-specific name shows first.',
@@ -125,102 +121,86 @@ export const FEATURES = [
     major: true,
   },
   {
-    id: 'filters-builder',
-    name: 'Visual Tulip API Filters Builder',
+    id: "filters-builder",
+    name: "Visual Tulip API Filters Builder",
     description:
-      'On connector function pages, replace the JSON text box for the `filters` query parameter with a row-per-filter builder (field, function, arg). Variable pills round-trip as `$Name$` strings; type `$Name$` directly in an arg field to reference a variable.',
+      "On connector function pages, replace the JSON text box for the `filters` query parameter with a row-per-filter builder (field, function, arg). Variable pills round-trip as `$Name$` strings; type `$Name$` directly in an arg field to reference a variable.",
     defaultEnabled: true,
     major: true,
   },
   {
-    id: 'variable-full-path',
-    name: 'Show Full Variable Path on Selection',
+    id: "variable-full-path",
+    name: "Show Full Variable Path on Selection",
     description:
-      'In the trigger editor, when a nested Object field is selected from a variable dropdown, show the full ancestor path ("Object → Field → SubField") in the selected-value display instead of just the leaf field name.',
+      'In the trigger editor, show the full ancestor path ("Object → Field → SubField") for nested Object fields instead of just the leaf field name. Patches each variable as you select it, and also auto-expands all already-selected variables once when the trigger editor opens.',
     defaultEnabled: true,
     major: true,
   },
   {
-    id: 'expand-all-variable-paths',
-    name: 'Expand All Variable Paths Button',
+    id: "expression-editor-fuzzy",
+    name: "Improved Expression Autocomplete",
     description:
-      'Adds an "Expand paths" button to the app editor toolbar. Clicking it briefly opens each variable trigger button on the page to learn the selected item\'s full hierarchy, then rewrites the display to show "Object → Field → SubField". Skips top-level variables and already-expanded buttons.',
-    defaultEnabled: true,
-    major: true,
-  },
-  {
-    id: 'expression-editor-fuzzy',
-    name: 'Improved Expression Autocomplete',
-    description:
-      'In the formula/expression editor popup, replace the “starts with” filtering of suggestions with a case-insensitive substring (contains) match. Typing `User.` surfaces `@Table record.Current User.ID` etc. Arrow keys / Enter / click work as before. Ctrl+Enter (Cmd+Enter on Mac) saves.',
+      "In the formula/expression editor popup, replace the “starts with” filtering of suggestions with a case-insensitive substring (contains) match. Typing `User.` surfaces `@Table record.Current User.ID` etc. Arrow keys / Enter / click work as before. Ctrl+Enter (Cmd+Enter on Mac) saves.",
     defaultEnabled: false,
     major: true,
     developerOnly: true,
   },
   {
-    id: 'collapse-tables-tile',
-    name: 'Collapse Table Rows',
+    id: "collapse-tables-tile",
+    name: "Collapse Records Rows",
     description:
       'On app editor pages, click the caret at the right edge of a table row in the Tables tile to collapse/expand its Query, Record Placeholder, and linked record buttons. Each table starts collapsed — only the icon, table name, and a two-line "· N placeholders" / "· M aggregations" summary show until you expand it. The table name still opens its menu on click. A "Collapse all" / "Expand all" toggle below the Add Table row collapses or expands every table at once.',
-    defaultEnabled: false,
-    major: false,
-  },
-  {
-    id: 'action-editor-frequent',
-    name: 'Frequent Actions On Top',
-    description:
-      'Collapse the trigger action-type dropdown to Data Manipulation, Table Records, Run Function, and Run Connector Function, plus a “Show all actions…” option that expands the full list.',
-    defaultEnabled: true,
-    major: false,
-  },
-  {
-    id: 'snap-to-grid',
-    name: 'Snap Widgets to 10px Grid',
-    description:
-      'In the app editor, snap a widget’s position and size to the nearest multiple of 10 when you finish dragging or resizing it. Only the values changed by that interaction are snapped; clicking a widget or manually editing the X/Y/W/H fields is left alone.',
-    defaultEnabled: false,
-    major: false,
-  },
-  {
-    id: 'query-list-search',
-    name: 'Searchable Query Picker',
-    description:
-      'In the Query picker popup, cap its height to the screen (the list scrolls inside) and add a sticky search box at the top that filters the saved queries by name as you type.',
-    defaultEnabled: true,
-    major: false,
-  },
-  {
-    id: 'history-search',
-    name: 'App & Table History (Ctrl+L)',
-    description:
-      'Logs every app, table, and connector function you open and adds a Ctrl+L search palette to jump back to any of them by name or folder. Enter opens in the current tab; Ctrl/Cmd+Enter opens a new tab.',
     defaultEnabled: true,
     major: true,
   },
   {
-    id: 'app-list-date-columns',
-    name: 'App List: Created & Completed Columns',
+    id: "action-editor-frequent",
+    name: "Frequent Trigger Actions On Top",
+    description:
+      "Collapse the trigger action-type dropdown to Data Manipulation, Table Records, Run Function, and Run Connector Function, plus a “Show all actions…” option that expands the full list.",
+    defaultEnabled: true,
+    major: true,
+  },
+  {
+    id: "snap-to-grid",
+    name: "Snap Widgets to 10px Grid",
+    description:
+      "In the app editor, snap a widget’s position and size to the nearest multiple of 10 when you finish dragging or resizing it. Only the values changed by that interaction are snapped; clicking a widget or manually editing the X/Y/W/H fields is left alone.",
+    defaultEnabled: true,
+    major: true,
+  },
+  {
+    id: "query-list-search",
+    name: "Searchable Table Queries",
+    description:
+      "In the Query picker popup, cap its height to the screen (the list scrolls inside) and add a sticky search box at the top that filters the saved queries by name as you type.",
+    defaultEnabled: true,
+    major: true,
+  },
+  {
+    id: "history-search",
+    name: "Quick Search History (⌘K / Ctrl+K)",
+    description:
+      "Logs every app, table, and connector function you open and adds a ⌘K (Ctrl+K on Windows/Linux) search palette to jump back to any of them by name or folder. Enter opens in the current tab; Ctrl/Cmd+Enter opens a new tab.",
+    defaultEnabled: true,
+    major: true,
+  },
+  {
+    id: "app-list-date-columns",
+    name: "App List: Created & Completed Columns",
     description:
       'On app/folder lists, add "Created" and "Last Completed" columns (sourced from the apps API the page already loads) after the Last Modified column.',
-    defaultEnabled: true,
+    defaultEnabled: false,
     major: false,
   },
   {
-    id: 'dev-tools',
-    name: 'Dev Tools (Agent Debugging)',
+    id: "dev-tools",
+    name: "Dev Tools (Agent Debugging)",
     description:
-      'Defines window.__tulbelt (isolated world) with logging and DOM-inspection helpers for agent-driven debugging. Run __tulbelt.copy() in the DevTools console (Tulbelt context) to copy a redacted JSON report. See docs/devtools.md.',
+      "Defines window.__tulbelt (isolated world) with logging and DOM-inspection helpers for agent-driven debugging. Run __tulbelt.copy() in the DevTools console (Tulbelt context) to copy a redacted JSON report. See docs/devtools.md.",
     defaultEnabled: false,
     major: false,
     developerOnly: true,
-  },
-  {
-    id: 'filters-builder-v2',
-    name: 'Visual Tulip API Filters Builder v2',
-    description:
-      'Rewrite of the filters builder. Variable pills read and write as `$Name$` strings; a whole-arg variable shows as a chip in the builder, and typing `$Name$` in an arg field creates one. Don’t enable together with the original Visual Tulip API Filters Builder.',
-    defaultEnabled: false,
-    major: true,
   },
 ];
 
@@ -241,14 +221,12 @@ export function getPopupFeatureGroups({ showDeveloperFeatures = false } = {}) {
   return { major, more };
 }
 
-export const STORAGE_KEY = 'toggles';
-export const DEVELOPER_MODE_KEY = 'developerMode';
+export const STORAGE_KEY = "toggles";
+export const DEVELOPER_MODE_KEY = "developerMode";
 
 /** Popup-only features; forced off in getToggles() unless developer mode is on. */
 export async function getDeveloperMode() {
-  const { [DEVELOPER_MODE_KEY]: on } = await chrome.storage.local.get(
-    DEVELOPER_MODE_KEY,
-  );
+  const { [DEVELOPER_MODE_KEY]: on } = await chrome.storage.local.get(DEVELOPER_MODE_KEY);
   return on === true;
 }
 
@@ -266,21 +244,18 @@ export function ruleIdFor(index) {
 // declared default (and applying the one-time legacy migration for the merged
 // compact-app-editor-header toggle).
 function resolveDefault(stored, feature) {
-  if (feature.id === 'compact-app-editor-header') {
+  if (feature.id === "compact-app-editor-header") {
     if (Object.prototype.hasOwnProperty.call(stored, feature.id)) {
       return stored[feature.id];
     }
-    const migrated = LEGACY_COMPACT_APP_EDITOR_HEADER_IDS.some(
-      (id) => stored[id] === true,
-    );
+    const migrated = LEGACY_COMPACT_APP_EDITOR_HEADER_IDS.some((id) => stored[id] === true);
     return migrated || feature.defaultEnabled;
   }
   return stored[feature.id] ?? feature.defaultEnabled;
 }
 
 export async function getToggles() {
-  const { [STORAGE_KEY]: stored = {} } =
-    await chrome.storage.local.get(STORAGE_KEY);
+  const { [STORAGE_KEY]: stored = {} } = await chrome.storage.local.get(STORAGE_KEY);
   const developerMode = await getDeveloperMode();
   const result = {};
   for (const f of FEATURES) {
@@ -298,8 +273,7 @@ export async function getToggles() {
 // update, and startup (see background.js), any toggle shipped in a later
 // version gets its default seeded the next time the extension loads.
 export async function seedDefaults() {
-  const { [STORAGE_KEY]: stored = {} } =
-    await chrome.storage.local.get(STORAGE_KEY);
+  const { [STORAGE_KEY]: stored = {} } = await chrome.storage.local.get(STORAGE_KEY);
   const next = { ...stored };
   let changed = false;
   for (const f of FEATURES) {
@@ -314,8 +288,7 @@ export async function seedDefaults() {
 }
 
 export async function setToggle(id, enabled) {
-  const { [STORAGE_KEY]: stored = {} } =
-    await chrome.storage.local.get(STORAGE_KEY);
+  const { [STORAGE_KEY]: stored = {} } = await chrome.storage.local.get(STORAGE_KEY);
   await chrome.storage.local.set({
     [STORAGE_KEY]: { ...stored, [id]: enabled },
   });

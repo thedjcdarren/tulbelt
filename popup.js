@@ -4,12 +4,12 @@ import {
   getToggles,
   setDeveloperMode,
   setToggle,
-} from './features.js';
+} from "./features.js";
 
 const DEV_MODE_CLICKS = 5;
 const DEV_MODE_CLICK_WINDOW_MS = 2000;
 
-const featureTemplate = document.createElement('template');
+const featureTemplate = document.createElement("template");
 featureTemplate.innerHTML = `
   <li class="feature">
     <label>
@@ -22,12 +22,12 @@ featureTemplate.innerHTML = `
   </li>
 `;
 
-const sectionTemplate = document.createElement('template');
+const sectionTemplate = document.createElement("template");
 sectionTemplate.innerHTML = `
   <li class="feature-section"><span class="feature-section-label"></span></li>
 `;
 
-const tooltip = document.getElementById('tooltip');
+const tooltip = document.getElementById("tooltip");
 const SHOW_DELAY_MS = 150;
 let showTimer = null;
 
@@ -36,7 +36,7 @@ function positionTooltip(anchor) {
   const margin = 6;
   const inset = 10;
   const tipRect = tooltip.getBoundingClientRect();
-  const alignRight = anchor.closest('.header-links');
+  const alignRight = anchor.closest(".header-links");
 
   let top = rect.bottom + margin;
   if (top + tipRect.height > window.innerHeight - inset) {
@@ -70,30 +70,30 @@ function hideTooltip() {
 }
 
 function bindTooltip(label, text) {
-  label.addEventListener('mouseenter', () => showTooltip(text, label));
-  label.addEventListener('mouseleave', hideTooltip);
-  label.addEventListener('focusin', () => showTooltip(text, label));
-  label.addEventListener('focusout', hideTooltip);
+  label.addEventListener("mouseenter", () => showTooltip(text, label));
+  label.addEventListener("mouseleave", hideTooltip);
+  label.addEventListener("focusin", () => showTooltip(text, label));
+  label.addEventListener("focusout", hideTooltip);
 }
 
 function createSectionNode(title, sectionId) {
   const node = sectionTemplate.content.firstElementChild.cloneNode(true);
-  node.querySelector('.feature-section-label').textContent = title;
+  node.querySelector(".feature-section-label").textContent = title;
   node.dataset.section = sectionId;
   return node;
 }
 
 function createFeatureNode(feature, enabled, sectionId) {
   const node = featureTemplate.content.firstElementChild.cloneNode(true);
-  const label = node.querySelector('label');
-  node.querySelector('.feature-name').textContent = feature.name;
+  const label = node.querySelector("label");
+  node.querySelector(".feature-name").textContent = feature.name;
   node.dataset.featureId = feature.id;
   node.dataset.search = `${feature.name} ${feature.description}`.toLowerCase();
   node.dataset.section = sectionId;
   bindTooltip(label, feature.description);
-  const cb = node.querySelector('input');
+  const cb = node.querySelector("input");
   cb.checked = enabled;
-  cb.addEventListener('change', () => setToggle(feature.id, cb.checked));
+  cb.addEventListener("change", () => setToggle(feature.id, cb.checked));
   return node;
 }
 
@@ -102,16 +102,16 @@ function buildPopupFeatures(toggles, showDeveloperFeatures) {
   const items = [];
 
   if (major.length) {
-    items.push(createSectionNode('Major', 'major'));
+    items.push(createSectionNode("Major", "major"));
     for (const feature of major) {
-      items.push(createFeatureNode(feature, toggles[feature.id], 'major'));
+      items.push(createFeatureNode(feature, toggles[feature.id], "major"));
     }
   }
 
   if (more.length) {
-    items.push(createSectionNode('More', 'more'));
+    items.push(createSectionNode("More", "more"));
     for (const feature of more) {
-      items.push(createFeatureNode(feature, toggles[feature.id], 'more'));
+      items.push(createFeatureNode(feature, toggles[feature.id], "more"));
     }
   }
 
@@ -124,13 +124,13 @@ function filterFeatures(query, list, noResults) {
 
   hideTooltip();
 
-  for (const node of list.querySelectorAll('.feature')) {
+  for (const node of list.querySelectorAll(".feature")) {
     const show = !q || node.dataset.search.includes(q);
     node.hidden = !show;
     if (show) visibleFeatures++;
   }
 
-  for (const section of list.querySelectorAll('.feature-section')) {
+  for (const section of list.querySelectorAll(".feature-section")) {
     const sectionId = section.dataset.section;
     const hasVisible = [...list.querySelectorAll(`.feature[data-section="${sectionId}"]`)].some(
       (node) => !node.hidden,
@@ -143,13 +143,13 @@ function filterFeatures(query, list, noResults) {
 }
 
 function bindDeveloperModeUnlock(onChange) {
-  const title = document.querySelector('.header-brand h1');
+  const title = document.querySelector(".header-brand h1");
   if (!title) return;
 
   let clicks = 0;
   let resetTimer = null;
 
-  title.addEventListener('click', async () => {
+  title.addEventListener("click", async () => {
     clicks += 1;
     clearTimeout(resetTimer);
     resetTimer = setTimeout(() => {
@@ -167,30 +167,28 @@ function bindDeveloperModeUnlock(onChange) {
 }
 
 function setDeveloperModeSubtitle(enabled) {
-  const subtitle = document.querySelector('.subtitle');
+  const subtitle = document.querySelector(".subtitle");
   if (!subtitle) return;
-  subtitle.textContent = enabled ? 'tulip.co tweaks · developer' : 'tulip.co tweaks';
+  subtitle.textContent = enabled ? "tulip.co tweaks · developer" : "tulip.co tweaks";
 }
 
 async function render() {
   const developerMode = await getDeveloperMode();
   const toggles = await getToggles();
-  const list = document.getElementById('toggles');
-  const search = document.getElementById('feature-search');
-  const noResults = document.getElementById('no-results');
+  const list = document.getElementById("toggles");
+  const search = document.getElementById("feature-search");
+  const noResults = document.getElementById("no-results");
 
   setDeveloperModeSubtitle(developerMode);
   list.replaceChildren(...buildPopupFeatures(toggles, developerMode));
 
-  search.addEventListener('input', () =>
-    filterFeatures(search.value, list, noResults),
-  );
+  search.addEventListener("input", () => filterFeatures(search.value, list, noResults));
 
-  document.addEventListener('scroll', hideTooltip, true);
+  document.addEventListener("scroll", hideTooltip, true);
 
-  for (const link of document.querySelectorAll('.header-links a')) {
-    bindTooltip(link, link.getAttribute('aria-label'));
-    link.addEventListener('click', (e) => {
+  for (const link of document.querySelectorAll(".header-links a")) {
+    bindTooltip(link, link.getAttribute("aria-label"));
+    link.addEventListener("click", (e) => {
       e.preventDefault();
       hideTooltip();
       chrome.tabs.create({ url: link.href });

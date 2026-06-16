@@ -11,30 +11,30 @@
 //   * keeps that attribute in sync as the toggle changes.
 
 (() => {
-const FEATURE_ID = 'app-list-date-columns';
-const STORAGE_KEY = 'toggles';
-const ATTR = 'data-tulbelt-app-dates-enabled';
+  const FEATURE_ID = "app-list-date-columns";
+  const STORAGE_KEY = "toggles";
+  const ATTR = "data-tulbelt-app-dates-enabled";
 
-function setAttr(enabled) {
-  try {
-    document.documentElement.setAttribute(ATTR, enabled ? 'true' : 'false');
-  } catch (_) {}
-}
-
-async function syncFromStorage() {
-  let stored = {};
-  try {
-    const raw = await chrome.storage.local.get(STORAGE_KEY);
-    if (raw && typeof raw[STORAGE_KEY] === 'object') stored = raw[STORAGE_KEY];
-  } catch (_) {
-    return;
+  function setAttr(enabled) {
+    try {
+      document.documentElement.setAttribute(ATTR, enabled ? "true" : "false");
+    } catch (_) {}
   }
-  setAttr(stored[FEATURE_ID] === true);
-}
 
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes[STORAGE_KEY]) syncFromStorage();
-});
+  async function syncFromStorage() {
+    let stored = {};
+    try {
+      const raw = await chrome.storage.local.get(STORAGE_KEY);
+      if (raw && typeof raw[STORAGE_KEY] === "object") stored = raw[STORAGE_KEY];
+    } catch (_) {
+      return;
+    }
+    setAttr(stored[FEATURE_ID] === true);
+  }
 
-syncFromStorage();
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes[STORAGE_KEY]) syncFromStorage();
+  });
+
+  syncFromStorage();
 })();

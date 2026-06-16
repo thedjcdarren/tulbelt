@@ -1,16 +1,9 @@
-import {
-  FEATURES,
-  STORAGE_KEY,
-  getToggles,
-  ruleIdFor,
-  seedDefaults,
-} from './features.js';
+import { FEATURES, STORAGE_KEY, getToggles, ruleIdFor, seedDefaults } from "./features.js";
 
-const TABLE_FEATURE_ID = 'table-default-sort';
-const TABLE_URL_RE =
-  /^https:\/\/([^/]+)\.tulip\.co((?:\/w\/[^/]+)?\/table\/[^?]+)$/;
+const TABLE_FEATURE_ID = "table-default-sort";
+const TABLE_URL_RE = /^https:\/\/([^/]+)\.tulip\.co((?:\/w\/[^/]+)?\/table\/[^?]+)$/;
 const SORT_QUERY =
-  'sortOptions=%5B%7B%22sortBy%22%3A%22_createdAt%22%2C%22sortDir%22%3A%22desc%22%7D%5D&offset=0';
+  "sortOptions=%5B%7B%22sortBy%22%3A%22_createdAt%22%2C%22sortDir%22%3A%22desc%22%7D%5D&offset=0";
 
 async function syncRules() {
   const toggles = await getToggles();
@@ -29,7 +22,7 @@ async function syncRules() {
 }
 
 const TABLE_NAV_FILTER = {
-  url: [{ hostSuffix: '.tulip.co', pathContains: '/table/' }],
+  url: [{ hostSuffix: ".tulip.co", pathContains: "/table/" }],
 };
 
 // A Back/Forward landed on the un-sorted table entry the redirect leaves behind
@@ -41,7 +34,7 @@ const TABLE_NAV_FILTER = {
 // onHistoryStateUpdated, so both events route here. Returns true when handled.
 async function skipSortDuplicate(details) {
   if (details.frameId !== 0) return false;
-  if (!details.transitionQualifiers?.includes('forward_back')) return false;
+  if (!details.transitionQualifiers?.includes("forward_back")) return false;
   const toggles = await getToggles();
   if (!toggles[TABLE_FEATURE_ID]) return false;
   if (!TABLE_URL_RE.test(details.url)) return false;
@@ -84,15 +77,9 @@ async function init() {
 chrome.runtime.onInstalled.addListener(init);
 chrome.runtime.onStartup.addListener(init);
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes[STORAGE_KEY]) syncRules();
+  if (area === "local" && changes[STORAGE_KEY]) syncRules();
 });
-chrome.webNavigation.onHistoryStateUpdated.addListener(
-  onSpaNavigation,
-  TABLE_NAV_FILTER,
-);
+chrome.webNavigation.onHistoryStateUpdated.addListener(onSpaNavigation, TABLE_NAV_FILTER);
 // Cross-document Back/Forward (e.g. from the sorted full-load entry back to the
 // un-sorted SPA entry) only surfaces here, not in onHistoryStateUpdated.
-chrome.webNavigation.onCommitted.addListener(
-  skipSortDuplicate,
-  TABLE_NAV_FILTER,
-);
+chrome.webNavigation.onCommitted.addListener(skipSortDuplicate, TABLE_NAV_FILTER);
