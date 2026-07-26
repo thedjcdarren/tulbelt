@@ -59,7 +59,59 @@ it initiates (or `popstate`). So:
 - `manifest.json` — register the script.
 - `features.js` — registry entry.
 
+## The builder page (v2)
+
+The placeholder body is replaced by the actual builder.
+
+### Data model
+
+One localStorage key on the tenant origin (per-instance scoping — a deliberate
+choice over chrome.storage.local), `tulbelt-option-sets`:
+
+```json
+{ "version": 1,
+  "sets": [ {
+      "id": "os_…", "name": "Defect Types", "description": "",
+      "dataType": "text" | "integer" | "number",
+      "options": [ { "id": "op_…", "value": "Scratch", "description": "" } ],
+      "createdAt": 0, "updatedAt": 0 } ] }
+```
+
+Option order is array order — that is the persisted sequence. Values persist
+as strings; the data type governs the input widget and validation, never
+silent coercion. Every change autosaves synchronously (no Save button).
+
+### UI
+
+Master–detail inside the page container:
+
+- **Left panel:** "New option set" button plus the list of sets (name,
+  data-type badge, option count); selected set highlighted.
+- **Create form:** name (required) + data type select. Type is fixed once the
+  set is created — changing type under existing values is a conversion mess
+  not worth solving in v1.
+- **Editor:** name input (red outline when empty), type badge, "Delete set"
+  with inline Yes/No confirm (no browser popups), optional description
+  textarea, then the options list: ▲/▼ reorder buttons, typed value input
+  (`text` → text input; `integer` → number input step 1, validated
+  `/^-?\d+$/`; `number` → number input, validated finite float), optional
+  description input, ✕ remove. "+ Add option" appends and focuses the new row.
+- Invalid/empty values stay editable with a red outline; what you typed is
+  what's stored.
+
+### Rendering
+
+Full re-render on structural changes (select/create/delete/add/remove/move);
+plain input events update state + save + targeted DOM tweaks only (left-list
+name text, validation class), so focus is never lost mid-keystroke. Data
+reloads from localStorage on each page activation so another tab's edits show
+up after navigating away and back. localStorage read/write is wrapped in
+try/catch; failures surface in a non-fatal banner.
+
 ## Testing
 
 Manual, like the rest of tulbelt: inject → click → fake URL → click away →
 back/forward → hard reload on the fake URL → toggle off while on the page.
+Builder: create sets of each type → add/edit/reorder/remove options →
+validation outlines → delete confirm → reload page and confirm persistence →
+check the `tulbelt-option-sets` key in DevTools.
