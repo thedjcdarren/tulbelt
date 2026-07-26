@@ -234,8 +234,17 @@ style is copied from whichever real item currently has it (detected as the
 minority className — hashes are never hardcoded). Clicking any real link
 deactivates and `replaceState`s back to the last real settings path so the
 router and URL agree; back/forward and hard reloads on the fake URL re-activate
-over whatever Tulip renders. Currently a placeholder shell — the builder UI
-comes next. Design: `docs/superpowers/specs/2026-07-26-option-sets-builder-design.md`.
+over whatever Tulip renders.
+
+The page is a master–detail builder for named option sets typed as Text,
+Integer, or Number (type fixed at creation). Options are ordered rows —
+▲/▼ reorder, typed value input (integers validated as `/^-?\d+$/`, numbers as
+finite floats; invalid/empty values get a red outline, never silent coercion),
+optional description per option and per set, ✕ remove, inline confirm on set
+delete. Every change autosaves to the tenant origin's localStorage under
+`tulbelt-option-sets` (values stored as strings; option order = array order),
+so sets are local to this browser and Tulip instance.
+Design: `docs/superpowers/specs/2026-07-26-option-sets-builder-design.md`.
 
 ### Dev Tools (agent debugging) — `dev-tools` · **default: off** · **developer-only**
 

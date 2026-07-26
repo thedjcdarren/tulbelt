@@ -205,7 +205,7 @@ export const FEATURES = [
     id: "option-sets-builder",
     name: "Option Sets Builder",
     description:
-      'Adds an "Option Sets" page to Account Settings at the fake URL /account/option-sets. Tulip\'s header and settings sidebar stay real; the page body is Tulbelt\'s. Currently a placeholder shell — the builder UI comes next.',
+      'Adds an "Option Sets" page to Account Settings at the fake URL /account/option-sets. Build named option sets typed as Text, Integer, or Number: add, edit, reorder, and remove options, each with an optional description. Stored in the tenant\'s localStorage — local to this browser and Tulip instance.',
     defaultEnabled: true,
     major: true,
   },
