@@ -53,12 +53,15 @@
         display: block;
         white-space: pre-wrap;
         overflow-wrap: break-word;
-        /* The action body is a wrapping row flexbox. A content-width proxy
-           with short text fits beside the selects on the same flex line and
-           sticks out taller than them; width: 100% forces the proxy's flex
-           basis to the full row so it always wraps onto its own line. */
-        width: 100%;
-        margin: 4px 0 0;
+        /* The action body is a wrapping row flexbox. flex-basis:auto keeps
+           the proxy's natural (one-line text) width as its hypothetical size,
+           so flexbox puts it beside the selects while the text fits in the
+           leftover space and wraps it to a new line only when it doesn't.
+           grow fills whichever line it lands on; shrink + min-width:0 let a
+           wrapped proxy compress to the row width so its text soft-wraps. */
+        flex: 1 1 auto;
+        min-width: 0;
+        margin: 0;
       }
     `;
     (document.head || document.documentElement).appendChild(style);

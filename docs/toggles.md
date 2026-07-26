@@ -155,8 +155,9 @@ change event.
 
 In the trigger editor, when a Value Picker text box's content is longer than
 the box (`input[aria-label="Value Picker"]`, e.g. static Text values), replaces
-it with an editable box on its own full-width line below the selects row that
-soft-wraps and auto-grows to show the full text. Values that fit keep the
+it with an editable box that fills the rest of the line beside the selects,
+wrapping onto its own full-width line (where it soft-wraps and auto-grows)
+only when the text needs more room. Values that fit keep the
 untouched native input, and swaps in either direction only happen while the
 field isn't focused (on mount or blur), so the caret is never yanked
 mid-typing. Built from the same two patterns as other trigger toggles: the

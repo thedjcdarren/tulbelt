@@ -20,10 +20,12 @@ left completely alone.
 - **Overflow-only.** The native input stays until the value doesn't fit
   (`scrollWidth > clientWidth`, with a 1px rounding buffer). When an
   overflowing value shrinks to fit again, the native input comes back.
-- **Own line.** The expanded box renders on its own full-width line below the
-  selects row (after the `triggerUnitStyles` container) rather than in the
-  input's slot — the input's wrapper span has a fixed 35px height that clips
-  anything taller, and the in-row slot is too narrow to look right anyway.
+- **Inline-first.** The expanded box renders after the `triggerUnitStyles`
+  container rather than in the input's slot (the input's wrapper span has a
+  fixed 35px height that clips anything taller). The action body is a
+  wrapping row flexbox, so with `flex: 1 1 auto` the box fills the remaining
+  space beside the selects while the text fits there, and wraps onto its own
+  full-width line only when the text needs more room.
 - **Never while focused.** Swapping in either direction happens only on
   mount/reconcile and on blur — never mid-typing, so the caret is never
   yanked. Type past the edge → nothing moves until you blur.
