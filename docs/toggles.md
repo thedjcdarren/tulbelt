@@ -210,6 +210,20 @@ permutation when that toggle is also on, so both stay aligned). Folder rows and
 never-completed apps show an em dash. Reverts to the original grid on disable; the
 invisible capture wrapper stays. See `docs/app-list-date-columns.md`.
 
+### Option Sets builder — `option-sets-builder` · **default: on**
+
+On `/account/*` pages, adds an **Option Sets** item to the Account Settings
+sidebar. Clicking it shows a Tulbelt-owned page at the fake URL
+`/account/option-sets`: the URL is set with `history.pushState`, which React
+Router never observes, so Tulip's header and sidebar stay real while the
+content pane is hidden and replaced with our container. The "selected" nav
+style is copied from whichever real item currently has it (detected as the
+minority className — hashes are never hardcoded). Clicking any real link
+deactivates and `replaceState`s back to the last real settings path so the
+router and URL agree; back/forward and hard reloads on the fake URL re-activate
+over whatever Tulip renders. Currently a placeholder shell — the builder UI
+comes next. Design: `docs/superpowers/specs/2026-07-26-option-sets-builder-design.md`.
+
 ### Dev Tools (agent debugging) — `dev-tools` · **default: off** · **developer-only**
 
 Hidden from the popup unless developer mode is on. Defines `window.__tulbelt`

@@ -41,6 +41,7 @@
         "toggles/history-search.js",
         "toggles/submitted-pending-approvals.js",
         "toggles/app-list-date-columns.js",
+        "toggles/option-sets-builder.js",
         "toggles/dev-probe.js"
       ],
       "run_at": "document_idle"

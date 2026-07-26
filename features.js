@@ -202,6 +202,14 @@ export const FEATURES = [
     major: true,
   },
   {
+    id: "option-sets-builder",
+    name: "Option Sets Builder",
+    description:
+      'Adds an "Option Sets" page to Account Settings at the fake URL /account/option-sets. Tulip\'s header and settings sidebar stay real; the page body is Tulbelt\'s. Currently a placeholder shell — the builder UI comes next.',
+    defaultEnabled: true,
+    major: true,
+  },
+  {
     id: "dev-tools",
     name: "Dev Tools (Agent Debugging)",
     description:
