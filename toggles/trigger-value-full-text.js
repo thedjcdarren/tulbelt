@@ -1,11 +1,12 @@
 // Trigger-editor Value Picker inputs (`input[aria-label="Value Picker"]`) are
 // one fixed-width line, so long static values get clipped. When a value
-// overflows its box, this hides the real input and renders a sibling
-// soft-wrapping, auto-growing <textarea> proxy that shows the full text and
-// stays editable — the action-editor-frequent.js hidden-real + proxy pattern.
-// Keystrokes forward into the real input via the native value setter +
-// bubbling input/change events (the snap-to-grid.js pattern) so React state
-// stays the source of truth.
+// overflows its box, this hides the input (and its fixed-35px-height wrapper,
+// which would otherwise clip anything taller — the action-editor-frequent.js
+// hidden-real + proxy pattern) and renders a soft-wrapping, auto-growing
+// <textarea> proxy on its own line below the row of selects, stretched to the
+// row's width. Keystrokes forward into the real input via the native value
+// setter + bubbling input/change events (the snap-to-grid.js pattern) so
+// React state stays the source of truth.
 //
 // Swaps in either direction happen only on mount/reconcile and on blur, never
 // while the field is focused, so the caret is never yanked mid-typing. Enter
@@ -21,22 +22,29 @@
   // Tulip's trigger-editor CSS-module class prefix; keeps look-alike inputs
   // elsewhere untouched.
   const EDITOR_SCOPE_SEL = '[class*="triggers-editor-client"]';
+  // The selects+input row the proxy is placed after ("Static value", "Text",
+  // …). Distinct from the inner "triggerItemStyles" containers.
+  const UNIT_SEL = '[class*="triggerUnitStyles"]';
   const PROXY_ATTR = "data-tulbelt-fulltext-proxy";
   const HIDDEN_ATTR = "data-tulbelt-fulltext-hidden";
   const STYLE_ID = "tulbelt-trigger-value-full-text-styles";
 
   let enabled = false;
   let observer = null;
-  // real input -> proxy textarea. WeakMap so React-replaced inputs are
-  // auto-collected; reset wholesale on disable.
+  // real input -> proxy textarea and back. WeakMaps so React-replaced inputs
+  // are auto-collected; reset wholesale on disable.
   let tracked = new WeakMap();
+  let proxyToInput = new WeakMap();
 
   function ensureStyles() {
     if (document.getElementById(STYLE_ID)) return;
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-      [${HIDDEN_ATTR}="true"] { display: none !important; }
+      /* Hide the input's wrapper, not just the input — the wrapper keeps a
+         fixed 35px x ~175px footprint that would leave an empty gap in the
+         selects row. */
+      :has(> input[${HIDDEN_ATTR}="true"]) { display: none !important; }
       textarea[${PROXY_ATTR}] {
         field-sizing: content;
         resize: none;
@@ -45,6 +53,9 @@
         display: block;
         white-space: pre-wrap;
         overflow-wrap: break-word;
+        align-self: stretch;
+        width: auto;
+        margin: 4px 0 0;
       }
     `;
     (document.head || document.documentElement).appendChild(style);
@@ -68,9 +79,9 @@
     input.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
-  // scrollWidth/clientWidth are 0 while the input is display:none, so a
-  // proxied input is measured by synchronously unhiding it — no paint happens
-  // between the attribute flips, so nothing flickers.
+  // scrollWidth/clientWidth are 0 while the input's wrapper is display:none,
+  // so a proxied input is measured by synchronously unhiding it — no paint
+  // happens between the attribute flips, so nothing flickers.
   function overflows(input) {
     const hidden = input.getAttribute(HIDDEN_ATTR) === "true";
     if (hidden) input.removeAttribute(HIDDEN_ATTR);
@@ -80,9 +91,9 @@
   }
 
   // The input carries no class (its look lives in computed styles), so the
-  // proxy copies the visual properties directly. Width is pinned in px — the
-  // wrapper shrink-wraps its content, so percentage widths would be circular
-  // once the input is hidden.
+  // proxy copies the visual properties directly. Width comes from
+  // `align-self: stretch` in the injected stylesheet — the proxy fills the
+  // action body rather than keeping the input's narrow fixed width.
   const COPIED_STYLES = [
     "font",
     "letterSpacing",
@@ -91,14 +102,22 @@
     "border",
     "borderRadius",
     "padding",
-    "margin",
     "boxShadow",
     "lineHeight",
     "textAlign",
   ];
 
+  // The proxy lives after the whole selects+input unit row, so the expanded
+  // box gets its own full-width line instead of squeezing into the row.
+  function proxyAnchor(input) {
+    const unit = input.closest(UNIT_SEL);
+    return unit?.parentElement ? unit : null;
+  }
+
   function mountProxy(input) {
-    if (tracked.has(input) || !input.parentElement) return;
+    if (tracked.has(input)) return;
+    const anchor = proxyAnchor(input);
+    if (!anchor) return;
 
     const proxy = document.createElement("textarea");
     proxy.setAttribute(PROXY_ATTR, "1");
@@ -111,7 +130,6 @@
     // Capture while the real input is still visible.
     const cs = getComputedStyle(input);
     for (const prop of COPIED_STYLES) proxy.style[prop] = cs[prop];
-    proxy.style.width = cs.width;
     proxy.style.minHeight = cs.height;
     proxy.value = input.value;
 
@@ -142,13 +160,16 @@
       queueMicrotask(grow);
     }
 
-    input.parentElement.insertBefore(proxy, input.nextSibling);
+    anchor.parentElement.insertBefore(proxy, anchor.nextSibling);
     input.setAttribute(HIDDEN_ATTR, "true");
     tracked.set(input, proxy);
+    proxyToInput.set(proxy, input);
   }
 
   function unmountProxy(input) {
-    tracked.get(input)?.remove();
+    const proxy = tracked.get(input);
+    if (proxy) proxyToInput.delete(proxy);
+    proxy?.remove();
     tracked.delete(input);
     input.removeAttribute(HIDDEN_ATTR);
   }
@@ -164,10 +185,15 @@
     const proxy = tracked.get(input);
     if (proxy) {
       if (isFocused(proxy)) return;
-      // React may have changed the value or replaced siblings underneath us.
+      // React may have changed the value or rebuilt siblings underneath us.
       if (proxy.value !== input.value) proxy.value = input.value;
-      if (!proxy.isConnected || input.nextElementSibling !== proxy) {
-        input.parentElement?.insertBefore(proxy, input.nextSibling);
+      const anchor = proxyAnchor(input);
+      if (!anchor) {
+        unmountProxy(input);
+        return;
+      }
+      if (!proxy.isConnected || anchor.nextElementSibling !== proxy) {
+        anchor.parentElement.insertBefore(proxy, anchor.nextSibling);
       }
       if (input.getAttribute(HIDDEN_ATTR) !== "true") {
         input.setAttribute(HIDDEN_ATTR, "true");
@@ -180,6 +206,12 @@
   }
 
   function reconcile() {
+    // Proxies whose input React removed (row deleted, action type changed)
+    // aren't reachable through the WeakMap — sweep them by attribute.
+    for (const proxy of document.querySelectorAll(`textarea[${PROXY_ATTR}]`)) {
+      const input = proxyToInput.get(proxy);
+      if (!input || !input.isConnected) proxy.remove();
+    }
     for (const input of document.querySelectorAll(INPUT_SEL)) {
       if (isValuePickerInput(input)) evaluate(input);
     }
@@ -191,6 +223,7 @@
       .querySelectorAll(`[${HIDDEN_ATTR}="true"]`)
       .forEach((el) => el.removeAttribute(HIDDEN_ATTR));
     tracked = new WeakMap();
+    proxyToInput = new WeakMap();
   }
 
   // Re-evaluate on blur — the only moment state is allowed to flip for a
@@ -200,7 +233,7 @@
     const t = e.target;
     let input = null;
     if (t instanceof Element && t.hasAttribute?.(PROXY_ATTR)) {
-      input = t.previousElementSibling;
+      input = proxyToInput.get(t);
     } else if (isValuePickerInput(t)) {
       input = t;
     }
@@ -225,9 +258,11 @@
         if (mutationTouchesTarget(node)) needsReconcile = true;
       }
       for (const node of m.removedNodes) {
-        if (node instanceof Element && tracked.has(node)) {
-          tracked.get(node)?.remove();
-          tracked.delete(node);
+        if (!(node instanceof Element)) continue;
+        // A removed row takes its input with it but can leave the proxy
+        // sibling behind; reconcile sweeps orphans.
+        if (tracked.has(node) || node.querySelector?.(`[${PROXY_ATTR}]`) || node.querySelector?.(INPUT_SEL)) {
+          needsReconcile = true;
         }
       }
     }

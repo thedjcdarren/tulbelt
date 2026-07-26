@@ -154,15 +154,18 @@ change event.
 ### Show full trigger value text — `trigger-value-full-text` · **default: on**
 
 In the trigger editor, when a Value Picker text box's content is longer than
-the box (`input[aria-label="Value Picker"]`, e.g. static Text values), swaps it
-for an editable box that soft-wraps and auto-grows to show the full text.
-Values that fit keep the untouched native input, and swaps in either direction
-only happen while the field isn't focused (on mount or blur), so the caret is
-never yanked mid-typing. Built from the same two patterns as other trigger
-toggles: the real React-controlled input is hidden behind a sibling
-`<textarea>` proxy, and edits forward back via the native value setter +
-bubbling input/change events. Enter commits (forwarded to the real input)
-instead of inserting a newline — the underlying value can't hold line breaks.
+the box (`input[aria-label="Value Picker"]`, e.g. static Text values), replaces
+it with an editable box on its own full-width line below the selects row that
+soft-wraps and auto-grows to show the full text. Values that fit keep the
+untouched native input, and swaps in either direction only happen while the
+field isn't focused (on mount or blur), so the caret is never yanked
+mid-typing. Built from the same two patterns as other trigger toggles: the
+real React-controlled input is hidden (wrapper and all — its wrapper has a
+fixed 35px height that would clip anything taller) and a `<textarea>` proxy is
+inserted after the row's `triggerUnitStyles` container; edits forward back via
+the native value setter + bubbling input/change events. Enter commits
+(forwarded to the real input) instead of inserting a newline — the underlying
+value can't hold line breaks.
 
 ### Collapse table rows — `collapse-tables-tile` · **default: off**
 

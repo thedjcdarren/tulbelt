@@ -20,6 +20,10 @@ left completely alone.
 - **Overflow-only.** The native input stays until the value doesn't fit
   (`scrollWidth > clientWidth`, with a 1px rounding buffer). When an
   overflowing value shrinks to fit again, the native input comes back.
+- **Own line.** The expanded box renders on its own full-width line below the
+  selects row (after the `triggerUnitStyles` container) rather than in the
+  input's slot — the input's wrapper span has a fixed 35px height that clips
+  anything taller, and the in-row slot is too narrow to look right anyway.
 - **Never while focused.** Swapping in either direction happens only on
   mount/reconcile and on blur — never mid-typing, so the caret is never
   yanked. Type past the edge → nothing moves until you blur.
@@ -42,14 +46,16 @@ New content script `toggles/trigger-value-full-text.js` (isolated world,
 `document_idle`, same manifest block as `action-editor-frequent.js`), using the
 two proven repo patterns:
 
-- **Hidden real + sibling proxy** (from `action-editor-frequent.js`): the real
-  input gets `data-tulbelt-fulltext-hidden="true"` (hidden by an injected
-  stylesheet); a sibling `<textarea rows="1" wrap="soft">` proxy is inserted
-  after it, flagged `data-tulbelt-fulltext-proxy`. Key visual computed styles
-  (font, padding, border, radius, colors, width) are copied from the real
-  input at mount, while it is still visible. Auto-grow via
-  `field-sizing: content` (Chrome-only extension), with a scrollHeight
-  fallback if unsupported.
+- **Hidden real + proxy** (from `action-editor-frequent.js`): the real input
+  gets `data-tulbelt-fulltext-hidden="true"`; the injected stylesheet hides
+  its *wrapper* (`:has(> input[…])`) so the fixed 35px × ~175px slot doesn't
+  leave an empty gap in the row. A `<textarea rows="1" wrap="soft">` proxy,
+  flagged `data-tulbelt-fulltext-proxy`, is inserted after the input's
+  `closest('[class*="triggerUnitStyles"]')` row and stretched to the action
+  body's width (`align-self: stretch`). Key visual computed styles (font,
+  padding, border, radius, colors) are copied from the real input at mount,
+  while it is still visible. Auto-grow via `field-sizing: content`
+  (Chrome-only extension), with a scrollHeight fallback if unsupported.
 - **Native-setter write-back** (from `snap-to-grid.js`): each proxy `input`
   event writes the (newline-stripped) value into the real input through the
   native `HTMLInputElement` value setter, then dispatches bubbling `input` +

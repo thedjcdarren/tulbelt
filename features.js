@@ -213,7 +213,7 @@ export const FEATURES = [
     id: "trigger-value-full-text",
     name: "Show Full Trigger Value Text",
     description:
-      "In the trigger editor, when a value text box's content is longer than the box, swap it for an editable box that wraps and grows to show the full text. Short values keep the normal input; the swap only happens when the field isn't focused, and Enter still commits.",
+      "In the trigger editor, when a value text box's content is longer than the box, replace it with an editable box on its own line below the selects that wraps and grows to show the full text. Short values keep the normal input; the swap only happens when the field isn't focused, and Enter still commits.",
     defaultEnabled: true,
     major: true,
   },
