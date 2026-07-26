@@ -53,8 +53,11 @@
         display: block;
         white-space: pre-wrap;
         overflow-wrap: break-word;
-        align-self: stretch;
-        width: auto;
+        /* The action body is a wrapping row flexbox. A content-width proxy
+           with short text fits beside the selects on the same flex line and
+           sticks out taller than them; width: 100% forces the proxy's flex
+           basis to the full row so it always wraps onto its own line. */
+        width: 100%;
         margin: 4px 0 0;
       }
     `;
