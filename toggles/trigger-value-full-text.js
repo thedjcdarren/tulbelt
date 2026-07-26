@@ -131,6 +131,22 @@
     const cs = getComputedStyle(input);
     for (const prop of COPIED_STYLES) proxy.style[prop] = cs[prop];
     proxy.style.minHeight = cs.height;
+    // An <input> vertically centers its single line inside its height; a
+    // textarea top-aligns. With the input's own 6px padding, one 17.5px line
+    // comes to ~31px, so the 35px min-height leaves slack at the bottom and
+    // the text sits visibly high. Split that slack into the vertical padding
+    // so a single line is centered at exactly min-height and extra lines grow
+    // from there.
+    const lineH = parseFloat(cs.lineHeight);
+    const inputH = parseFloat(cs.height);
+    const borderY = parseFloat(cs.borderTopWidth) + parseFloat(cs.borderBottomWidth);
+    if (Number.isFinite(lineH) && Number.isFinite(inputH)) {
+      const pad = (inputH - lineH - borderY) / 2;
+      if (pad > 0) {
+        proxy.style.paddingTop = `${pad}px`;
+        proxy.style.paddingBottom = `${pad}px`;
+      }
+    }
     proxy.value = input.value;
 
     proxy.addEventListener("input", () => {
