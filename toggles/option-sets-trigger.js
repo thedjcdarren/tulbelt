@@ -242,6 +242,44 @@
     flow.container.querySelector(`select[${PICKER_ATTR}="set"]`)?.after(optionPicker);
   }
 
+  function frames(n) {
+    return new Promise((resolve) => {
+      const step = () => (n-- <= 0 ? resolve() : requestAnimationFrame(step));
+      step();
+    });
+  }
+
+  // Write the value and verify it survived. The type-select change we just
+  // dispatched makes React re-render the row — a single write can land on a
+  // node React is about to discard, or be cleared by a type-change effect
+  // right after. Controlled inputs snap back to React state on unaccepted
+  // writes, so "DOM still holds the value a few frames later" proves state
+  // took it; if it was clobbered, re-query (the node may have been remounted)
+  // and write again. The input is focused first and blurred after so any
+  // commit-on-blur handling Tulip has fires exactly as it would for manual
+  // entry — callers must run this only after the flow CSS unhides the input,
+  // since a display:none input silently refuses focus().
+  async function writeValueWithRetry(container, value, attempts = 6) {
+    for (let i = 0; i < attempts; i++) {
+      if (!container.isConnected) {
+        console.warn("[tulbelt] option-sets: row was replaced mid-write — aborting");
+        return false;
+      }
+      const input = await waitFor(() => container.querySelector(VALUE_INPUT), 1000);
+      if (!input) return false;
+      input.focus({ preventScroll: true });
+      setNativeInput(input, value);
+      await frames(3);
+      const now = container.querySelector(VALUE_INPUT);
+      if (now && now.value === value) {
+        now.blur();
+        return true;
+      }
+      console.warn(`[tulbelt] option-sets: value write clobbered by a re-render (attempt ${i + 1}) — retrying`);
+    }
+    return false;
+  }
+
   async function onOptionPicked(real, setId, optionId) {
     const flow = flows.get(real);
     if (!flow) return;
@@ -263,18 +301,18 @@
     const typeOpt = findOptionByText(typeSelect, TYPE_LABELS[set.dataType] || "");
     if (typeOpt && typeSelect.value !== typeOpt.value) {
       setNativeSelect(typeSelect, typeOpt.value);
+      // Let React finish committing the type change before touching the input.
+      await frames(2);
     }
 
-    const input = await waitFor(() => container.querySelector(VALUE_INPUT));
-    if (!input) {
-      console.warn("[tulbelt] option-sets: static value input never rendered — aborting");
-      endFlow(real, proxy);
-      return;
-    }
-    setNativeInput(input, String(option.value));
-
-    // Done: drop the pickers, reveal the (now populated) native controls.
+    // Drop the pickers and unhide the native controls BEFORE writing: the
+    // value write needs a visible, focusable input (see writeValueWithRetry).
     endFlow(real, proxy);
+
+    const ok = await writeValueWithRetry(container, String(option.value));
+    if (!ok) {
+      console.warn("[tulbelt] option-sets: value write never stuck — Tulip UI may have changed");
+    }
   }
 
   // ── Scan loop ───────────────────────────────────────────────────────────────
