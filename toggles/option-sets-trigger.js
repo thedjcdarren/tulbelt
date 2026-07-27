@@ -106,6 +106,10 @@
       ${DS_SELECT}[${REAL_ATTR}] { display: none !important; }
       [${FLOW_ATTR}] div.imports-triggers-editor-client-styles--triggerItemStyles:not(:has(${DS_SELECT})) { display: none !important; }
       select[${PICKER_ATTR}] { margin-left: 5px; max-width: 240px; }
+      button[${PICKER_ATTR}] {
+        margin-left: 5px; padding: 0 12px; min-height: 35px; font: inherit;
+        background: #1c69e1; color: #fff; border: none; border-radius: 3px; cursor: pointer;
+      }
     `;
     (document.head || document.documentElement).appendChild(style);
   }
@@ -151,7 +155,7 @@
   }
 
   function removePickers(container) {
-    for (const el of container.querySelectorAll(`select[${PICKER_ATTR}]`)) el.remove();
+    for (const el of container.querySelectorAll(`[${PICKER_ATTR}]`)) el.remove();
   }
 
   function endFlow(real, proxy) {
@@ -180,17 +184,26 @@
     if (staticOpt && real.value !== staticOpt.value) setNativeSelect(real, staticOpt.value);
 
     const sets = loadSets();
+    if (sets.length === 0) {
+      // Nothing to pick from — offer the builder page instead (it survives a
+      // cold load of the fake URL, so a new tab works).
+      const configure = document.createElement("button");
+      configure.type = "button";
+      configure.setAttribute(PICKER_ATTR, "configure");
+      configure.textContent = "No option sets yet — configure…";
+      configure.title = "Opens the Option Sets builder (Account Settings) in a new tab";
+      configure.addEventListener("click", () => {
+        window.open("/account/option-sets", "_blank");
+      });
+      proxy.after(configure);
+      return;
+    }
+
     const setPicker = document.createElement("select");
     setPicker.setAttribute(PICKER_ATTR, "set");
     setPicker.className = real.className;
     setPicker.setAttribute("aria-label", "Select option set");
-    if (sets.length === 0) {
-      const none = document.createElement("option");
-      none.textContent = "No option sets configured — see Account Settings → Option Sets";
-      none.disabled = true;
-      none.selected = true;
-      setPicker.appendChild(none);
-    } else {
+    {
       const placeholder = document.createElement("option");
       placeholder.value = "";
       placeholder.textContent = "Choose option set…";
@@ -323,7 +336,7 @@
       const real = proxy._ossReal;
       if (!real || !real.isConnected) {
         proxy.closest(`[${FLOW_ATTR}]`)?.removeAttribute(FLOW_ATTR);
-        for (const p of proxy.parentElement?.querySelectorAll(`select[${PICKER_ATTR}]`) || []) p.remove();
+        for (const p of proxy.parentElement?.querySelectorAll(`[${PICKER_ATTR}]`) || []) p.remove();
         proxy.remove();
       }
     }
@@ -361,7 +374,7 @@
     observer?.disconnect();
     observer = null;
     for (const el of document.querySelectorAll(`[${FLOW_ATTR}]`)) el.removeAttribute(FLOW_ATTR);
-    for (const el of document.querySelectorAll(`select[${PICKER_ATTR}], select[${PROXY_ATTR}]`)) el.remove();
+    for (const el of document.querySelectorAll(`[${PICKER_ATTR}], select[${PROXY_ATTR}]`)) el.remove();
     for (const real of document.querySelectorAll(`[${REAL_ATTR}]`)) real.removeAttribute(REAL_ATTR);
     document.getElementById(STYLE_ID)?.remove();
   }
