@@ -205,7 +205,7 @@ export const FEATURES = [
     id: "option-sets-builder",
     name: "Option Sets Builder",
     description:
-      'Adds an "Option Sets" page to Account Settings at the fake URL /account/option-sets. Build named option sets typed as Text, Integer, or Number: add, edit, reorder, and remove options, each with an optional description. Stored in the tenant\'s localStorage — local to this browser and Tulip instance.',
+      'Adds an "Option Sets" page to Account Settings at the fake URL /account/option-sets. Build named option sets typed as Text, Integer, or Number: add, edit, reorder, and remove options, each with an optional description. In trigger editors, the "Select source of data" dropdown gains an "Option Set" entry — pick a set, pick an option, and the row is filled in as a normal Static value. Stored in the tenant\'s localStorage — local to this browser and Tulip instance.',
     defaultEnabled: true,
     major: true,
   },

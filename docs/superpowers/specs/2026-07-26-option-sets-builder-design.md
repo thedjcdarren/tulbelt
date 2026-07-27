@@ -108,6 +108,37 @@ reloads from localStorage on each page activation so another tab's edits show
 up after navigating away and back. localStorage read/write is wrapped in
 try/catch; failures surface in a non-fatal banner.
 
+## The use side: trigger editors (v3)
+
+`toggles/option-sets-trigger.js` (isolated world, same feature toggle) lets
+option sets fill in trigger static values. The invariant: **Tulip only ever
+sees a normal Static value** — datasource = Static value, type = the set's
+data type, value = the option's raw string. Option Set is a transient
+authoring aid, not a stored representation.
+
+- Every `select[data-testid="datasource-selector"]` is proxied: real select
+  hidden, visually identical proxy (real options copied) shown, plus an
+  "Option Set" entry inserted before Static value. Real picks forward to the
+  hidden select via native value setter + bubbled change.
+- Picking "Option Set": the real datasource is silently driven to Static
+  value; the row's static type/value controls are hidden by a flow-scoped CSS
+  rule (`:has()` keeps the datasource cell visible); a set picker appears,
+  then an option picker (set descriptions/option descriptions as tooltips;
+  options invalid for the set's type omitted).
+- Picking an option: wait for React to render the type select → write the
+  set's data type (matched by option label text) → wait for the value input →
+  write the option's value (native setters + bubbled input/change). Then the
+  pickers are removed and the native, now-populated controls reappear.
+- **No reverse flow** (deliberate, to minimize edge cases): existing static
+  values are never re-displayed as option sets, and the pickers vanish once
+  the write-through completes.
+- Sync: a MutationObserver re-scans on DOM changes; proxies whose real select
+  was swept by a React re-render are removed and rebuilt; proxy values mirror
+  React-driven changes when no flow is active. A row re-render mid-flow drops
+  the transient flow state — the user just re-picks.
+- If Tulip never renders the type select / value input (UI change), the flow
+  aborts with a console warning and the row reverts to native display.
+
 ## Testing
 
 Manual, like the rest of tulbelt: inject → click → fake URL → click away →
@@ -115,3 +146,8 @@ back/forward → hard reload on the fake URL → toggle off while on the page.
 Builder: create sets of each type → add/edit/reorder/remove options →
 validation outlines → delete confirm → reload page and confirm persistence →
 check the `tulbelt-option-sets` key in DevTools.
+Trigger side: open a trigger, pick Option Set in a "Select source of data"
+dropdown → pick set → pick option → confirm the row shows Static value +
+correct type + value and saves; pick a real source mid-flow to abort; verify
+sets created on the settings page appear immediately in a trigger tab after
+reopening the pickers.

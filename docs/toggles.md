@@ -249,6 +249,18 @@ optional description per option and per set, ✕ remove, inline confirm on set
 delete. Every change autosaves to the tenant origin's localStorage under
 `tulbelt-option-sets` (values stored as strings; option order = array order),
 so sets are local to this browser and Tulip instance.
+
+The use side (`toggles/option-sets-trigger.js`, same toggle) proxies every
+trigger-editor "Select source of data" dropdown (hidden real select + visually
+identical proxy, the `action-editor-frequent` pattern) and adds an **Option
+Set** entry next to Static value. Picking it silently drives the real row to
+Static value and shows two transient pickers — set, then option (descriptions
+as tooltips; options invalid for the set's type omitted). On option pick the
+set's data type and the option's value are written into the real type select
+and value input via native value setters + bubbled events, the pickers
+disappear, and the row is exactly the manual Static value entry Tulip would
+have produced. Deliberately no reverse flow: existing static values are never
+re-displayed as option sets.
 Design: `docs/superpowers/specs/2026-07-26-option-sets-builder-design.md`.
 
 ### Dev Tools (agent debugging) — `dev-tools` · **default: off** · **developer-only**

@@ -1,0 +1,345 @@
+// Use side of option-sets-builder: pick a configured option set instead of
+// typing a static value in trigger editors.
+//
+// Every "Select source of data" dropdown (data-testid="datasource-selector")
+// is proxied — real select hidden, visually identical proxy shown — with one
+// extra entry, "Option Set". Picking it silently drives the real controls to
+// Static value, shows a set picker and an option picker, and on option pick
+// writes the set's data type into the type select and the option's value into
+// the value input (native value setter + bubbled events, the same write-back
+// pattern as trigger-value-full-text). The pickers are a transient authoring
+// aid: once the value is written, they disappear and the row is exactly the
+// manual Static value entry Tulip would have produced — Tulip never sees
+// anything else. There is deliberately no reverse flow (existing static
+// values are never re-displayed as option sets).
+//
+// Option sets are read from the tenant origin's localStorage key
+// `tulbelt-option-sets`, written by the builder page (option-sets-builder.js).
+// Both scripts share the `option-sets-builder` feature toggle.
+
+(() => {
+  const FEATURE_ID = "option-sets-builder";
+  const STORAGE_KEY = "toggles";
+  const LS_KEY = "tulbelt-option-sets";
+
+  const DS_SELECT = 'select[data-testid="datasource-selector"]';
+  const TYPE_SELECT = 'select[data-testid="type-static-value-specifier"]';
+  const VALUE_INPUT = 'input[data-testid="value-static-value-specifier"]';
+
+  const REAL_ATTR = "data-tulbelt-oss-real";
+  const PROXY_ATTR = "data-tulbelt-oss-proxy";
+  const PICKER_ATTR = "data-tulbelt-oss-picker";
+  const FLOW_ATTR = "data-tulbelt-oss-flow";
+  const STYLE_ID = "tulbelt-oss-styles";
+  const SENTINEL = "__tulbelt-option-set__";
+
+  const TYPE_LABELS = { text: "Text", integer: "Integer", number: "Number" };
+
+  let enabled = false;
+  let observer = null;
+  let scheduled = false;
+  // real datasource <select> -> { proxy, container, setId }
+  const flows = new WeakMap();
+
+  // ── Option set data ─────────────────────────────────────────────────────────
+
+  function loadSets() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(LS_KEY) || "null");
+      return Array.isArray(parsed?.sets) ? parsed.sets : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function valueValid(type, raw) {
+    const s = String(raw).trim();
+    if (s === "") return false;
+    if (type === "integer") return /^-?\d+$/.test(s);
+    if (type === "number") return Number.isFinite(Number(s));
+    return true;
+  }
+
+  // ── React write-back ────────────────────────────────────────────────────────
+
+  function setNativeSelect(select, value) {
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set;
+    setter.call(select, value);
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function setNativeInput(input, value) {
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+    setter.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function findOptionByText(select, text) {
+    return [...select.options].find((o) => o.textContent.trim() === text) || null;
+  }
+
+  // Poll until fn() is truthy (React renders the next control) or time out.
+  function waitFor(fn, timeout = 3000) {
+    return new Promise((resolve) => {
+      const deadline = performance.now() + timeout;
+      const tick = () => {
+        const result = fn();
+        if (result) return resolve(result);
+        if (performance.now() > deadline) return resolve(null);
+        requestAnimationFrame(tick);
+      };
+      tick();
+    });
+  }
+
+  // ── Styles ──────────────────────────────────────────────────────────────────
+
+  function ensureStyles() {
+    if (document.getElementById(STYLE_ID)) return;
+    const style = document.createElement("style");
+    style.id = STYLE_ID;
+    // While a flow is active, hide the row's static type/value controls
+    // (rendered asynchronously after we select Static value) — but never the
+    // sibling div holding the datasource selector and our pickers.
+    style.textContent = `
+      ${DS_SELECT}[${REAL_ATTR}] { display: none !important; }
+      [${FLOW_ATTR}] div.imports-triggers-editor-client-styles--triggerItemStyles:not(:has(${DS_SELECT})) { display: none !important; }
+      select[${PICKER_ATTR}] { margin-left: 5px; max-width: 240px; }
+    `;
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  // ── Proxy lifecycle ─────────────────────────────────────────────────────────
+
+  function containerFor(real) {
+    return real.closest('[data-testid^="value-specifier-selector"]') || real.parentElement;
+  }
+
+  function buildProxy(real) {
+    const proxy = document.createElement("select");
+    proxy.setAttribute(PROXY_ATTR, "1");
+    proxy.className = real.className;
+    proxy.setAttribute("aria-label", real.getAttribute("aria-label") || "Select source of data");
+    let staticOption = null;
+    for (const opt of real.options) {
+      const copy = document.createElement("option");
+      copy.value = opt.value;
+      copy.textContent = opt.textContent;
+      if (opt.textContent.trim() === "Static value") staticOption = copy;
+      proxy.appendChild(copy);
+    }
+    const sentinel = document.createElement("option");
+    sentinel.value = SENTINEL;
+    sentinel.textContent = "Option Set";
+    // Conceptually (and near-alphabetically) it belongs next to Static value.
+    if (staticOption) staticOption.before(sentinel);
+    else proxy.appendChild(sentinel);
+    proxy.value = real.value;
+    proxy._ossReal = real;
+    proxy.addEventListener("change", () => onProxyChange(real, proxy));
+    return proxy;
+  }
+
+  function onProxyChange(real, proxy) {
+    if (proxy.value === SENTINEL) {
+      startFlow(real, proxy);
+      return;
+    }
+    endFlow(real, proxy);
+    setNativeSelect(real, proxy.value);
+  }
+
+  function removePickers(container) {
+    for (const el of container.querySelectorAll(`select[${PICKER_ATTR}]`)) el.remove();
+  }
+
+  function endFlow(real, proxy) {
+    const flow = flows.get(real);
+    flows.delete(real);
+    const container = flow?.container || containerFor(real);
+    if (container) {
+      container.removeAttribute(FLOW_ATTR);
+      removePickers(container);
+    }
+    if (proxy?.isConnected) proxy.value = real.value;
+  }
+
+  // ── The flow: Option Set → set → option → write-through ─────────────────────
+
+  function startFlow(real, proxy) {
+    const container = containerFor(real);
+    if (!container) return;
+    flows.set(real, { proxy, container, setId: null });
+    container.setAttribute(FLOW_ATTR, "");
+    removePickers(container);
+
+    // Silently put the real row into Static value mode; the type/value
+    // controls it renders stay hidden by the flow CSS until we're done.
+    const staticOpt = findOptionByText(real, "Static value");
+    if (staticOpt && real.value !== staticOpt.value) setNativeSelect(real, staticOpt.value);
+
+    const sets = loadSets();
+    const setPicker = document.createElement("select");
+    setPicker.setAttribute(PICKER_ATTR, "set");
+    setPicker.className = real.className;
+    setPicker.setAttribute("aria-label", "Select option set");
+    if (sets.length === 0) {
+      const none = document.createElement("option");
+      none.textContent = "No option sets configured — see Account Settings → Option Sets";
+      none.disabled = true;
+      none.selected = true;
+      setPicker.appendChild(none);
+    } else {
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "Choose option set…";
+      placeholder.disabled = true;
+      placeholder.selected = true;
+      setPicker.appendChild(placeholder);
+      for (const set of sets) {
+        const opt = document.createElement("option");
+        opt.value = set.id;
+        opt.textContent = `${set.name} (${TYPE_LABELS[set.dataType] || set.dataType})`;
+        if (set.description) opt.title = set.description;
+        setPicker.appendChild(opt);
+      }
+    }
+    setPicker.addEventListener("change", () => onSetPicked(real, setPicker.value));
+    proxy.after(setPicker);
+  }
+
+  function onSetPicked(real, setId) {
+    const flow = flows.get(real);
+    if (!flow) return;
+    flow.setId = setId;
+    const set = loadSets().find((s) => s.id === setId);
+    if (!set) return;
+
+    flow.container.querySelector(`select[${PICKER_ATTR}="option"]`)?.remove();
+    const optionPicker = document.createElement("select");
+    optionPicker.setAttribute(PICKER_ATTR, "option");
+    optionPicker.className = real.className;
+    optionPicker.setAttribute("aria-label", "Select option");
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "Choose option…";
+    placeholder.disabled = true;
+    placeholder.selected = true;
+    optionPicker.appendChild(placeholder);
+    const valid = set.options.filter((o) => valueValid(set.dataType, o.value));
+    for (const option of valid) {
+      const opt = document.createElement("option");
+      opt.value = option.id;
+      opt.textContent = option.value;
+      if (option.description) opt.title = option.description;
+      optionPicker.appendChild(opt);
+    }
+    if (valid.length === 0) {
+      placeholder.textContent = "This set has no valid options";
+    }
+    optionPicker.addEventListener("change", () => onOptionPicked(real, set.id, optionPicker.value));
+    flow.container.querySelector(`select[${PICKER_ATTR}="set"]`)?.after(optionPicker);
+  }
+
+  async function onOptionPicked(real, setId, optionId) {
+    const flow = flows.get(real);
+    if (!flow) return;
+    const set = loadSets().find((s) => s.id === setId);
+    const option = set?.options.find((o) => o.id === optionId);
+    if (!set || !option) return;
+    const { container, proxy } = flow;
+
+    // Static value should already be selected; make sure before driving on.
+    const staticOpt = findOptionByText(real, "Static value");
+    if (staticOpt && real.value !== staticOpt.value) setNativeSelect(real, staticOpt.value);
+
+    const typeSelect = await waitFor(() => container.querySelector(TYPE_SELECT));
+    if (!typeSelect) {
+      console.warn("[tulbelt] option-sets: static type select never rendered — aborting");
+      endFlow(real, proxy);
+      return;
+    }
+    const typeOpt = findOptionByText(typeSelect, TYPE_LABELS[set.dataType] || "");
+    if (typeOpt && typeSelect.value !== typeOpt.value) {
+      setNativeSelect(typeSelect, typeOpt.value);
+    }
+
+    const input = await waitFor(() => container.querySelector(VALUE_INPUT));
+    if (!input) {
+      console.warn("[tulbelt] option-sets: static value input never rendered — aborting");
+      endFlow(real, proxy);
+      return;
+    }
+    setNativeInput(input, String(option.value));
+
+    // Done: drop the pickers, reveal the (now populated) native controls.
+    endFlow(real, proxy);
+  }
+
+  // ── Scan loop ───────────────────────────────────────────────────────────────
+
+  function ensureAll() {
+    // Remove proxies whose real select was swept away by a React re-render.
+    for (const proxy of document.querySelectorAll(`select[${PROXY_ATTR}]`)) {
+      const real = proxy._ossReal;
+      if (!real || !real.isConnected) {
+        proxy.closest(`[${FLOW_ATTR}]`)?.removeAttribute(FLOW_ATTR);
+        for (const p of proxy.parentElement?.querySelectorAll(`select[${PICKER_ATTR}]`) || []) p.remove();
+        proxy.remove();
+      }
+    }
+    for (const real of document.querySelectorAll(DS_SELECT)) {
+      const existing = real.nextElementSibling?.hasAttribute?.(PROXY_ATTR)
+        ? real.nextElementSibling
+        : null;
+      if (!existing) {
+        real.setAttribute(REAL_ATTR, "");
+        real.after(buildProxy(real));
+        continue;
+      }
+      // Keep the proxy mirroring React-driven changes unless mid-flow.
+      if (!flows.has(real) && existing.value !== real.value) existing.value = real.value;
+    }
+  }
+
+  function scheduleEnsure() {
+    if (scheduled) return;
+    scheduled = true;
+    requestAnimationFrame(() => {
+      scheduled = false;
+      if (enabled) ensureAll();
+    });
+  }
+
+  function start() {
+    ensureStyles();
+    observer = new MutationObserver(scheduleEnsure);
+    observer.observe(document.body, { childList: true, subtree: true });
+    ensureAll();
+  }
+
+  function stop() {
+    observer?.disconnect();
+    observer = null;
+    for (const el of document.querySelectorAll(`[${FLOW_ATTR}]`)) el.removeAttribute(FLOW_ATTR);
+    for (const el of document.querySelectorAll(`select[${PICKER_ATTR}], select[${PROXY_ATTR}]`)) el.remove();
+    for (const real of document.querySelectorAll(`[${REAL_ATTR}]`)) real.removeAttribute(REAL_ATTR);
+    document.getElementById(STYLE_ID)?.remove();
+  }
+
+  async function syncFromStorage() {
+    const { [STORAGE_KEY]: stored = {} } = await chrome.storage.local.get(STORAGE_KEY);
+    const next = stored[FEATURE_ID] === true;
+    if (next === enabled) return;
+    enabled = next;
+    if (enabled) start();
+    else stop();
+  }
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes[STORAGE_KEY]) syncFromStorage();
+  });
+
+  syncFromStorage();
+})();
