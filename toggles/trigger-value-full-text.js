@@ -57,9 +57,11 @@
            the proxy's natural (one-line text) width as its hypothetical size,
            so flexbox puts it beside the selects while the text fits in the
            leftover space and wraps it to a new line only when it doesn't.
-           grow fills whichever line it lands on; shrink + min-width:0 let a
-           wrapped proxy compress to the row width so its text soft-wraps. */
-        flex: 1 1 auto;
+           grow stays 0 so the box always hugs its text — it only reaches full
+           width when the text is longer than the row, where shrink +
+           min-width:0 compress it to the row width and the text soft-wraps
+           onto 2+ lines. */
+        flex: 0 1 auto;
         min-width: 0;
         margin: 0;
       }
