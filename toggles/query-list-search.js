@@ -16,8 +16,9 @@
 // the currently-open one plus stopping the observer fully cleans up.
 
 (() => {
+  const { registerToggle, ensureStyles, removeStyles } = window.__tulbeltLib;
+
   const FEATURE_ID = "query-list-search";
-  const STORAGE_KEY = "toggles";
 
   const POPPER_SEL = '[x-attr-popper="popper"], [data-testid="popper"]';
   const CREATE_LABEL = "Create New Query";
@@ -29,7 +30,6 @@
   const STYLE_ID = "tulbelt-qls-styles";
   const WIDTH = "280px"; // fixed column width
 
-  let enabled = false;
   let observer = null;
 
   // Readable font size + spacing for the query buttons. Tulip shrinks the font
@@ -37,31 +37,11 @@
   // stylesheet (vs. per-button inline styles) reverts in one removal and covers
   // buttons added after we process. The buttons carry several styled-component
   // classes, so !important is needed to win specificity.
-  function ensureStyles() {
-    if (document.getElementById(STYLE_ID)) return;
-    const style = document.createElement("style");
-    style.id = STYLE_ID;
-    style.textContent =
-      `[${CONTAINER_ATTR}="1"] > button {` +
-      " font-size: 14px !important;" +
-      " margin-bottom: 6px !important;" +
-      // The column is flex; without this the buttons shrink to fit the capped
-      // height (vertically tightened, no scrollbar) instead of overflowing.
-      " flex-shrink: 0 !important;" +
-      // Fixed column width: long query names truncate with an ellipsis rather
-      // than widening the popper. Hovering shows the full name (title attr).
-      " max-width: 100% !important;" +
-      " box-sizing: border-box !important;" +
-      " overflow: hidden !important;" +
-      " white-space: nowrap !important;" +
-      " text-overflow: ellipsis !important;" +
-      " }";
-    (document.head || document.documentElement).appendChild(style);
-  }
-
-  function removeStyles() {
-    document.getElementById(STYLE_ID)?.remove();
-  }
+  // The column is flex; without this the buttons shrink to fit the capped
+  // height (vertically tightened, no scrollbar) instead of overflowing.
+  // Fixed column width: long query names truncate with an ellipsis rather
+  // than widening the popper. Hovering shows the full name (title attr).
+  const CSS = `[${CONTAINER_ATTR}="1"] > button { font-size: 14px !important; margin-bottom: 6px !important; flex-shrink: 0 !important; max-width: 100% !important; box-sizing: border-box !important; overflow: hidden !important; white-space: nowrap !important; text-overflow: ellipsis !important; }`;
 
   // Among open poppers, return the query picker's button column (the parent of
   // the "Create New Query" button), or null if no query popper is open yet.
@@ -205,25 +185,16 @@
     observer = null;
   }
 
-  async function syncFromStorage() {
-    const { [STORAGE_KEY]: stored = {} } = await chrome.storage.local.get(STORAGE_KEY);
-    const next = stored[FEATURE_ID] === true;
-    if (next === enabled) return;
-    enabled = next;
-    if (enabled) {
-      ensureStyles();
+  registerToggle(FEATURE_ID, {
+    onEnable() {
+      ensureStyles(STYLE_ID, CSS);
       applyToPresent();
       startObserver();
-    } else {
+    },
+    onDisable() {
       stopObserver();
       restoreAll();
-      removeStyles();
-    }
-  }
-
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes[STORAGE_KEY]) syncFromStorage();
+      removeStyles(STYLE_ID);
+    },
   });
-
-  syncFromStorage();
 })();

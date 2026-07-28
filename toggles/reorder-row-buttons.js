@@ -5,35 +5,24 @@
 // 44px slots.
 
 (() => {
+  const { registerToggle, addedNodesObserver, ensureStyles, removeStyles } = window.__tulbeltLib;
+
   const ROW_SELECTOR = '[role="row"][widths]';
   const ACTION_MENU_SELECTOR = '[data-testid="app-actions-menu"]';
   const FEATURE_ID = "reorder-row-buttons";
-  const STORAGE_KEY = "toggles";
   const STYLE_ID = "tulbelt-reorder-styles";
   const REORDER_ATTR = "data-tulbelt-reorder";
 
-  let enabled = false;
-  let observer = null;
   const knownBodyWidths = new Set();
 
-  function ensureStyles() {
-    if (document.getElementById(STYLE_ID)) return;
-    const style = document.createElement("style");
-    style.id = STYLE_ID;
-    // Middle cells default to a high order; first cell stays first and the last
-    // two are pulled forward into slots 2 and 3.
-    style.textContent = `
+  // Middle cells default to a high order; first cell stays first and the last
+  // two are pulled forward into slots 2 and 3.
+  const CSS = `
     [${REORDER_ATTR}="true"] > * { order: 5; }
     [${REORDER_ATTR}="true"] > :first-child { order: 1; }
     [${REORDER_ATTR}="true"] > :nth-last-child(2) { order: 2; }
     [${REORDER_ATTR}="true"] > :last-child { order: 3; }
   `;
-    (document.head || document.documentElement).appendChild(style);
-  }
-
-  function removeStyles() {
-    document.getElementById(STYLE_ID)?.remove();
-  }
 
   // Splits a grid-template-columns–style string on top-level whitespace, so
   // `minmax(300px, 1fr) 44px` becomes ["minmax(300px, 1fr)", "44px"].
@@ -113,48 +102,18 @@
     knownBodyWidths.clear();
   }
 
-  function onMutation(mutations) {
-    for (const m of mutations) {
-      for (const node of m.addedNodes) {
-        if (!(node instanceof Element)) continue;
-        if (node.matches?.(ROW_SELECTOR) || node.querySelector?.(ROW_SELECTOR)) {
-          applyToAll();
-          return;
-        }
-      }
-    }
-  }
+  const observer = addedNodesObserver(ROW_SELECTOR, applyToAll);
 
-  function startObserver() {
-    if (observer) return;
-    observer = new MutationObserver(onMutation);
-    observer.observe(document.body, { childList: true, subtree: true });
-  }
-
-  function stopObserver() {
-    observer?.disconnect();
-    observer = null;
-  }
-
-  async function syncFromStorage() {
-    const { [STORAGE_KEY]: stored = {} } = await chrome.storage.local.get(STORAGE_KEY);
-    const next = stored[FEATURE_ID] === true;
-    if (next === enabled) return;
-    enabled = next;
-    if (enabled) {
-      ensureStyles();
+  registerToggle(FEATURE_ID, {
+    onEnable() {
+      ensureStyles(STYLE_ID, CSS);
       applyToAll();
-      startObserver();
-    } else {
-      stopObserver();
+      observer.start();
+    },
+    onDisable() {
+      observer.stop();
       restoreAll();
-      removeStyles();
-    }
-  }
-
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes[STORAGE_KEY]) syncFromStorage();
+      removeStyles(STYLE_ID);
+    },
   });
-
-  syncFromStorage();
 })();

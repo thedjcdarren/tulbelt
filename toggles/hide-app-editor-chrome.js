@@ -2,15 +2,15 @@
 // `[data-testid="tulip-header"]`, subheader row, and Add/Icons palette strip.
 
 (() => {
+  const { registerToggle, addedNodesObserver, ensureStyles, removeStyles } = window.__tulbeltLib;
+
   const FEATURE_ID = "hide-app-editor-chrome";
-  const STORAGE_KEY = "toggles";
   const STYLE_ID = "tulbelt-hide-app-editor-chrome-styles";
   const MARK = "data-tulbelt-hide-app-editor-chrome";
   /** App version editor: /w/<ws>/apps/<appId>/versions/<versionId> or /apps/<appId>/versions/<versionId> */
   const APP_EDITOR_PATH_RE = /^(?:\/w\/[^/]+)?\/apps\/[^/]+\/versions\/[^/]+/;
 
-  let enabled = false;
-  let observer = null;
+  let active = false;
 
   function isAppEditorUrl() {
     return APP_EDITOR_PATH_RE.test(location.pathname || "");
@@ -35,18 +35,6 @@
   }
 
   installHistoryLocationHooks();
-
-  function ensureStyles() {
-    if (document.getElementById(STYLE_ID)) return;
-    const style = document.createElement("style");
-    style.id = STYLE_ID;
-    style.textContent = `[${MARK}="true"] { display: none !important; }`;
-    (document.head || document.documentElement).appendChild(style);
-  }
-
-  function removeStyles() {
-    document.getElementById(STYLE_ID)?.remove();
-  }
 
   function markSubheaderRow() {
     const subheader = document.querySelector('[data-testid="subheader"]');
@@ -82,7 +70,7 @@
   }
 
   function onLocationMaybeChanged() {
-    if (!enabled) return;
+    if (!active) return;
     applyAll();
   }
 
@@ -92,62 +80,28 @@
     }
   }
 
-  function touchesTarget(node) {
-    if (!(node instanceof Element)) return false;
-    const sel = [
-      '[data-testid="tulip-header"]',
-      '[data-testid="subheader"]',
-      "#app-editor-add",
-      "#app-editor-publish",
-      "#app-editor-icons",
-    ];
-    for (const s of sel) {
-      if (node.matches?.(s) || node.querySelector?.(s)) return true;
-    }
-    return false;
-  }
+  const CHROME_SELECTOR = [
+    '[data-testid="tulip-header"]',
+    '[data-testid="subheader"]',
+    "#app-editor-add",
+    "#app-editor-publish",
+    "#app-editor-icons",
+  ].join(", ");
 
-  function onMutation(mutations) {
-    for (const m of mutations) {
-      for (const node of m.addedNodes) {
-        if (touchesTarget(node)) {
-          applyAll();
-          return;
-        }
-      }
-    }
-  }
+  const observer = addedNodesObserver(CHROME_SELECTOR, applyAll);
 
-  function startObserver() {
-    if (observer) return;
-    observer = new MutationObserver(onMutation);
-    observer.observe(document.body, { childList: true, subtree: true });
-  }
-
-  function stopObserver() {
-    observer?.disconnect();
-    observer = null;
-  }
-
-  async function syncFromStorage() {
-    const { [STORAGE_KEY]: stored = {} } = await chrome.storage.local.get(STORAGE_KEY);
-    const next = stored[FEATURE_ID] === true;
-    if (next === enabled) return;
-    enabled = next;
-    if (enabled) {
-      ensureStyles();
+  registerToggle(FEATURE_ID, {
+    onEnable() {
+      active = true;
+      ensureStyles(STYLE_ID, `[${MARK}="true"] { display: none !important; }`);
       applyAll();
-      startObserver();
-    } else {
-      stopObserver();
+      observer.start();
+    },
+    onDisable() {
+      active = false;
+      observer.stop();
       restoreAll();
-      removeStyles();
-    }
-  }
-
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes[STORAGE_KEY]) syncFromStorage();
+      removeStyles(STYLE_ID);
+    },
   });
-
-  syncFromStorage();
 })();

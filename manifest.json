@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Tulbelt",
-  "version": "1.0.5",
+  "name": "Tulbelt Unlisted",
+  "version": "1.0.6",
   "description": "Quality-of-life toggles for tulip.co.",
   "permissions": [
     "declarativeNetRequestWithHostAccess",
@@ -21,6 +21,7 @@
         "*://*.tulip.co/*"
       ],
       "js": [
+        "toggles/lib.js",
         "toggles/devtools.js",
         "toggles/reorder-row-buttons.js",
         "toggles/auto-snapshot.js",

@@ -16,8 +16,9 @@
 // directly, and Tulip re-renders inputs and pills from the string.
 
 (() => {
+  const { registerToggle, ensureStyles, removeStyles } = window.__tulbeltLib;
+
   const FEATURE_ID = "filters-builder";
-  const STORAGE_KEY = "toggles";
 
   // `<input placeholder="Add key">` is what Tulip renders for each query-param
   // key cell. The placeholder is stable across styled-component rebuilds; the
@@ -59,17 +60,12 @@
   const FT_BY_VALUE = new Map(FUNCTION_TYPES.map((ft) => [ft.value, ft]));
   const FT_VALUES = new Set(FUNCTION_TYPES.map((ft) => ft.value));
 
-  let enabled = false;
   let observer = null;
   // Row element -> builder controller. WeakMap so React-replaced rows are
   // auto-collected without leaking.
   const trackedRows = new WeakMap();
 
-  function ensureStyles() {
-    if (document.getElementById(STYLE_ID)) return;
-    const style = document.createElement("style");
-    style.id = STYLE_ID;
-    style.textContent = `
+  const CSS = `
     [${HIDDEN_ROW_ATTR}="true"] {
       display: none !important;
     }
@@ -226,12 +222,6 @@
       font-style: italic;
     }
   `;
-    (document.head || document.documentElement).appendChild(style);
-  }
-
-  function removeStyles() {
-    document.getElementById(STYLE_ID)?.remove();
-  }
 
   // Walk up from a key input to the row container holding the key cell, the
   // literal "=" separator, and the value cell.
@@ -726,25 +716,16 @@
     document.removeEventListener(WRITE_RESULT_EVENT, onWriteResult, true);
   }
 
-  async function syncFromStorage() {
-    const { [STORAGE_KEY]: stored = {} } = await chrome.storage.local.get(STORAGE_KEY);
-    const next = stored[FEATURE_ID] === true;
-    if (next === enabled) return;
-    enabled = next;
-    if (enabled) {
-      ensureStyles();
+  registerToggle(FEATURE_ID, {
+    onEnable() {
+      ensureStyles(STYLE_ID, CSS);
       reconcile();
       startObserver();
-    } else {
+    },
+    onDisable() {
       stopObserver();
       restoreAll();
-      removeStyles();
-    }
-  }
-
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes[STORAGE_KEY]) syncFromStorage();
+      removeStyles(STYLE_ID);
+    },
   });
-
-  syncFromStorage();
 })();

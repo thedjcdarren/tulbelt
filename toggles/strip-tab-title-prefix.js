@@ -4,11 +4,11 @@
 // un-stripped title is cached so disabling the toggle can put it back.
 
 (() => {
+  const { registerToggle } = window.__tulbeltLib;
+
   const FEATURE_ID = "strip-tab-title-prefix";
-  const STORAGE_KEY = "toggles";
   const PREFIX = "Tulip | ";
 
-  let enabled = false;
   let titleObserver = null;
   let headObserver = null;
   let lastOriginalTitle = null;
@@ -65,22 +65,13 @@
     }
   }
 
-  async function syncFromStorage() {
-    const { [STORAGE_KEY]: stored = {} } = await chrome.storage.local.get(STORAGE_KEY);
-    const next = stored[FEATURE_ID] === true;
-    if (next === enabled) return;
-    enabled = next;
-    if (enabled) {
+  registerToggle(FEATURE_ID, {
+    onEnable() {
       startObserver();
-    } else {
+    },
+    onDisable() {
       stopObserver();
       restore();
-    }
-  }
-
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes[STORAGE_KEY]) syncFromStorage();
+    },
   });
-
-  syncFromStorage();
 })();

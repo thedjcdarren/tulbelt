@@ -15,8 +15,9 @@
 // soft wrap only.
 
 (() => {
+  const { registerToggle, ensureStyles, removeStyles } = window.__tulbeltLib;
+
   const FEATURE_ID = "trigger-value-full-text";
-  const STORAGE_KEY = "toggles";
 
   const INPUT_SEL = 'input[type="text"][aria-label="Value Picker"]';
   // Tulip's trigger-editor CSS-module class prefix; keeps look-alike inputs
@@ -29,18 +30,14 @@
   const HIDDEN_ATTR = "data-tulbelt-fulltext-hidden";
   const STYLE_ID = "tulbelt-trigger-value-full-text-styles";
 
-  let enabled = false;
+  let active = false;
   let observer = null;
   // real input -> proxy textarea and back. WeakMaps so React-replaced inputs
   // are auto-collected; reset wholesale on disable.
   let tracked = new WeakMap();
   let proxyToInput = new WeakMap();
 
-  function ensureStyles() {
-    if (document.getElementById(STYLE_ID)) return;
-    const style = document.createElement("style");
-    style.id = STYLE_ID;
-    style.textContent = `
+  const CSS = `
       /* Hide the input's wrapper, not just the input — the wrapper keeps a
          fixed 35px x ~175px footprint that would leave an empty gap in the
          selects row. */
@@ -66,12 +63,6 @@
         margin: 0;
       }
     `;
-    (document.head || document.documentElement).appendChild(style);
-  }
-
-  function removeStyles() {
-    document.getElementById(STYLE_ID)?.remove();
-  }
 
   function isValuePickerInput(el) {
     return (
@@ -264,7 +255,7 @@
     if (!(input instanceof HTMLInputElement)) return;
     // Wait a tick so document.activeElement reflects where focus landed.
     setTimeout(() => {
-      if (enabled) evaluate(input);
+      if (active) evaluate(input);
     }, 0);
   }
 
@@ -306,25 +297,18 @@
     document.removeEventListener("focusout", onFocusOut, true);
   }
 
-  async function syncFromStorage() {
-    const { [STORAGE_KEY]: stored = {} } = await chrome.storage.local.get(STORAGE_KEY);
-    const next = stored[FEATURE_ID] === true;
-    if (next === enabled) return;
-    enabled = next;
-    if (enabled) {
-      ensureStyles();
+  registerToggle(FEATURE_ID, {
+    onEnable() {
+      active = true;
+      ensureStyles(STYLE_ID, CSS);
       reconcile();
       startObserver();
-    } else {
+    },
+    onDisable() {
+      active = false;
       stopObserver();
       restoreAll();
-      removeStyles();
-    }
-  }
-
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes[STORAGE_KEY]) syncFromStorage();
+      removeStyles(STYLE_ID);
+    },
   });
-
-  syncFromStorage();
 })();

@@ -17,8 +17,9 @@
 //   rewrite its label. This catches variables selected before the toggle ran.
 
 (() => {
+  const { registerToggle } = window.__tulbeltLib;
+
   const FEATURE_ID = "variable-full-path";
-  const STORAGE_KEY = "toggles";
   const STASH_ATTR = "data-tulbelt-vfp-original";
   const PATCHED_ATTR = "data-tulbelt-vfp-patched";
   const TRIGGER_BTN_LABEL = "Select new variable or array";
@@ -363,21 +364,17 @@
   // ---------------------------------------------------------------------------
   // Storage sync
   // ---------------------------------------------------------------------------
-  async function syncFromStorage() {
-    const { [STORAGE_KEY]: stored = {} } = await chrome.storage.local.get(STORAGE_KEY);
-    const next = stored[FEATURE_ID] === true;
-    if (next === enabled) return;
-    enabled = next;
-    if (enabled) startObserver();
-    else {
+  // `enabled` is also read by handleClick/runExpand/onMutation, so mirror the
+  // toggle state into it here.
+  registerToggle(FEATURE_ID, {
+    onEnable() {
+      enabled = true;
+      startObserver();
+    },
+    onDisable() {
+      enabled = false;
       stopObserver();
       restoreAll();
-    }
-  }
-
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes[STORAGE_KEY]) syncFromStorage();
+    },
   });
-
-  syncFromStorage();
 })();

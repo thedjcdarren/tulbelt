@@ -1,8 +1,12 @@
 // The trigger action-type picker (`select[data-testid$="action-editor"]`) lists
 // every action alphabetically. This collapses the list to four frequent actions
-// plus a "Show all actions…" sentinel option; picking the sentinel rebuilds the
-// list with everything (frequent still pinned on top) and reopens the dropdown
-// via showPicker().
+// plus a "Show all actions…" sentinel option. Expanding to the full list has
+// two routes: an "All…" button next to the select (one click — its DOM click
+// carries transient activation, so a synchronous showPicker() opens the full
+// list immediately), and the in-dropdown sentinel as a discoverable fallback
+// (clicks inside a native select popup happen in browser chrome and grant the
+// page no activation, so that route can't reopen the picker for mouse users —
+// the list just stays expanded for the next click).
 //
 // The select is React-controlled, so we don't reorder its own nodes (React keeps
 // re-rendering and scrambling our order back). Instead — the filters-builder.js
@@ -13,11 +17,13 @@
 // per-instance IDs).
 
 (() => {
+  const { registerToggle, ensureStyles, removeStyles } = window.__tulbeltLib;
+
   const FEATURE_ID = "action-editor-frequent";
-  const STORAGE_KEY = "toggles";
 
   const SELECT_SEL = 'select[data-testid$="action-editor"]';
   const PROXY_ATTR = "data-tulbelt-frequent-proxy";
+  const EXPAND_ATTR = "data-tulbelt-frequent-expand";
   const HIDDEN_ATTR = "data-tulbelt-frequent-hidden";
   const STYLE_ID = "tulbelt-frequent-actions-styles";
 
@@ -29,23 +35,10 @@
   const SENTINEL_VALUE = "__tulbelt-show-all__";
   const SENTINEL_LABEL = "Show all actions…";
 
-  let enabled = false;
   let observer = null;
   // real select -> { proxy, signature }. WeakMap so React-replaced selects are
   // auto-collected; reset wholesale on disable.
   let tracked = new WeakMap();
-
-  function ensureStyles() {
-    if (document.getElementById(STYLE_ID)) return;
-    const style = document.createElement("style");
-    style.id = STYLE_ID;
-    style.textContent = `[${HIDDEN_ATTR}="true"] { display: none !important; }`;
-    (document.head || document.documentElement).appendChild(style);
-  }
-
-  function removeStyles() {
-    document.getElementById(STYLE_ID)?.remove();
-  }
 
   // Drive React's onChange by going around the React-overridden value setter.
   function setNativeSelectValue(select, value) {
@@ -124,6 +117,12 @@
     );
   }
 
+  // The button only earns its space while the list is collapsed; once expanded
+  // the dropdown itself holds everything.
+  function syncExpandButton(entry) {
+    entry.button.style.display = entry.expanded ? "none" : "";
+  }
+
   function attach(real) {
     const existing = tracked.get(real);
     if (existing) {
@@ -132,6 +131,9 @@
       }
       if (!existing.proxy.isConnected || real.nextElementSibling !== existing.proxy) {
         real.parentElement?.insertBefore(existing.proxy, real.nextSibling);
+      }
+      if (!existing.button.isConnected || existing.proxy.nextElementSibling !== existing.button) {
+        existing.proxy.after(existing.button);
       }
       // Track the real select's (stateful) styled-component class so validation
       // styling like the empty/required red border stays in step.
@@ -143,6 +145,7 @@
         existing.expanded = false;
         buildProxyOptions(existing.proxy, real, existing.expanded);
         existing.signature = sig;
+        syncExpandButton(existing);
       } else if (existing.proxy.value !== real.value) {
         // Rebuild rather than just assign: a collapsed proxy may not contain
         // the real select's new value.
@@ -182,16 +185,18 @@
     proxy.addEventListener("change", () => {
       if (proxy.value === SENTINEL_VALUE) {
         const entry = tracked.get(real);
-        if (entry) entry.expanded = true;
+        if (entry) {
+          entry.expanded = true;
+          syncExpandButton(entry);
+        }
         buildProxyOptions(proxy, real, true);
-        // The native picker is still dismissing while `change` runs; a sync
-        // showPicker() gets ignored. Defer to the next task.
+        // Mouse picks happen in browser chrome and grant no transient
+        // activation, so this reopen only ever works for keyboard picks —
+        // otherwise the list at least stays expanded for the next click.
         setTimeout(() => {
           try {
             proxy.showPicker();
           } catch (e) {
-            // Without transient activation the list at least stays expanded
-            // for the next click.
             console.warn("[tulbelt] reopen after expand failed:", e.message);
           }
         }, 0);
@@ -206,10 +211,33 @@
       });
     });
 
+    const expand = document.createElement("button");
+    expand.type = "button";
+    expand.setAttribute(EXPAND_ATTR, "1");
+    expand.textContent = "All…";
+    expand.title = "Show all actions";
+    expand.setAttribute("aria-label", "Show all actions");
+    expand.addEventListener("click", () => {
+      const entry = tracked.get(real);
+      if (!entry) return;
+      entry.expanded = true;
+      buildProxyOptions(proxy, real, true);
+      syncExpandButton(entry);
+      proxy.focus();
+      // Unlike the sentinel path, this click is a real DOM event with
+      // transient activation, so a synchronous showPicker() is allowed.
+      try {
+        proxy.showPicker();
+      } catch (e) {
+        console.warn("[tulbelt] showPicker after expand failed:", e.message);
+      }
+    });
+
     real.parentElement.insertBefore(proxy, real.nextSibling);
+    proxy.after(expand);
     real.setAttribute(HIDDEN_ATTR, "true");
 
-    tracked.set(real, { proxy, signature: optionsSignature(real), expanded: false });
+    tracked.set(real, { proxy, button: expand, signature: optionsSignature(real), expanded: false });
   }
 
   function reconcile() {
@@ -219,7 +247,7 @@
   }
 
   function restoreAll() {
-    document.querySelectorAll(`[${PROXY_ATTR}]`).forEach((el) => el.remove());
+    document.querySelectorAll(`[${PROXY_ATTR}], [${EXPAND_ATTR}]`).forEach((el) => el.remove());
     document
       .querySelectorAll(`[${HIDDEN_ATTR}="true"]`)
       .forEach((el) => el.removeAttribute(HIDDEN_ATTR));
@@ -235,12 +263,16 @@
   function onMutation(mutations) {
     let needsReconcile = false;
     for (const m of mutations) {
-      // Ignore mutations inside our own proxy.
-      if (m.target instanceof Element && m.target.closest?.(`[${PROXY_ATTR}]`)) {
+      // Ignore mutations inside our own proxy or expand button.
+      if (
+        m.target instanceof Element &&
+        m.target.closest?.(`[${PROXY_ATTR}], [${EXPAND_ATTR}]`)
+      ) {
         continue;
       }
-      // Option set changed on a tracked real select.
-      if (m.type === "childList" && m.target instanceof Element && tracked.has(m.target)) {
+      // Option set changed on a tracked real select, or React swapped its
+      // validity styling class in place.
+      if (m.target instanceof Element && tracked.has(m.target)) {
         needsReconcile = true;
       }
       for (const node of m.addedNodes) {
@@ -248,7 +280,9 @@
       }
       for (const node of m.removedNodes) {
         if (node instanceof Element && tracked.has(node)) {
-          tracked.get(node)?.proxy.remove();
+          const entry = tracked.get(node);
+          entry?.proxy.remove();
+          entry?.button.remove();
           tracked.delete(node);
         }
       }
@@ -259,7 +293,14 @@
   function startObserver() {
     if (observer) return;
     observer = new MutationObserver(onMutation);
-    observer.observe(document.body, { childList: true, subtree: true });
+    // attributeFilter: React flips validity styling by rewriting class on the
+    // real select in place — a childList-only observer never sees that.
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class"],
+    });
   }
 
   function stopObserver() {
@@ -267,25 +308,25 @@
     observer = null;
   }
 
-  async function syncFromStorage() {
-    const { [STORAGE_KEY]: stored = {} } = await chrome.storage.local.get(STORAGE_KEY);
-    const next = stored[FEATURE_ID] === true;
-    if (next === enabled) return;
-    enabled = next;
-    if (enabled) {
-      ensureStyles();
+  registerToggle(FEATURE_ID, {
+    onEnable() {
+      ensureStyles(
+        STYLE_ID,
+        `[${HIDDEN_ATTR}="true"] { display: none !important; }
+         button[${EXPAND_ATTR}] {
+           margin-left: 5px; padding: 0 10px; min-height: 35px; font: inherit;
+           background: #fff; color: #333; border: 1px solid #ccc;
+           border-radius: 3px; cursor: pointer; white-space: nowrap;
+         }
+         button[${EXPAND_ATTR}]:hover { background: #f2f5f9; }`,
+      );
       reconcile();
       startObserver();
-    } else {
+    },
+    onDisable() {
       stopObserver();
       restoreAll();
-      removeStyles();
-    }
-  }
-
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes[STORAGE_KEY]) syncFromStorage();
+      removeStyles(STYLE_ID);
+    },
   });
-
-  syncFromStorage();
 })();

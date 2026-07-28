@@ -7,8 +7,9 @@
 // modal; we never try to open it ourselves.
 
 (() => {
+  const { registerToggle, addedNodesObserver, ensureStyles, removeStyles } = window.__tulbeltLib;
+
   const FEATURE_ID = "move-variables-to-toolbar";
-  const STORAGE_KEY = "toggles";
   const STYLE_ID = "tulbelt-move-variables-styles";
   const HIDE_ATTR = "data-tulbelt-move-variables";
   const CLONE_MARK = "data-tulbelt-variables-clone";
@@ -24,21 +25,6 @@
   // inline lets us render the toolbar clone even when the source button has
   // never been on the page in this session.
   const VARIABLES_SVG = `<svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true"><path d="M13.46,7.93c.35-.7,1.68-4.06,4.24-4.06a2.11,2.11,0,0,1,2.3,2,1.66,1.66,0,0,1-1.5,1.86c-.8,0-1.33-.53-1.86-.53a3.76,3.76,0,0,0-2.56,3.44,2.43,2.43,0,0,0,.09.8c.44,1.86,2,5.92,3,5.92.35,0,.89-.26,1.15-.26.53,0,.62.7.62,1.06S17.35,19.51,15.67,20a6.72,6.72,0,0,1-1.24.17c-1.41,0-1.94-2.12-2.74-3.89-.35-.7-.71-.7-1-.17-.44.88-2,4.06-4.24,4.06C5.5,20.13,4,19.43,4,18a1.82,1.82,0,0,1,1.77-1.94c.79,0,1.24.53,1.77.53.79,0,2.56-2,2.56-3.63a4.44,4.44,0,0,0-.18-1.06c-.44-1.41-1.59-5.3-2.83-5.3C6.65,6.61,6.21,7,6,7c-.44-.18-.62-.88-.62-1.15C5.41,5.37,7,4.49,8.69,4a5.61,5.61,0,0,1,1.14-.17c1.42,0,2.13,2,2.83,3.89C12.75,8.2,13.1,8.64,13.46,7.93Z"></path></svg>`;
-
-  let enabled = false;
-  let observer = null;
-
-  function ensureStyles() {
-    if (document.getElementById(STYLE_ID)) return;
-    const style = document.createElement("style");
-    style.id = STYLE_ID;
-    style.textContent = `[${HIDE_ATTR}="true"] { display: none !important; }`;
-    (document.head || document.documentElement).appendChild(style);
-  }
-
-  function removeStyles() {
-    document.getElementById(STYLE_ID)?.remove();
-  }
 
   function tileLabel(tile) {
     return tile.querySelector("label")?.textContent?.trim() ?? "";
@@ -176,64 +162,25 @@
     ensureClone();
   }
 
-  function touchesToolbar(node) {
-    if (node.matches?.(TRANSLATION_DROPDOWN_SELECTOR)) return true;
-    if (node.querySelector?.(TRANSLATION_DROPDOWN_SELECTOR)) return true;
-    for (const selector of TOOLBAR_ANCHOR_SELECTORS) {
-      if (node.matches?.(selector) || node.querySelector?.(selector)) return true;
-    }
-    return false;
-  }
+  const OBSERVED_SELECTOR = [
+    TILE_SELECTOR,
+    TRANSLATION_DROPDOWN_SELECTOR,
+    ...TOOLBAR_ANCHOR_SELECTORS,
+  ].join(", ");
 
-  function touchesTarget(node) {
-    if (!(node instanceof Element)) return false;
-    return (
-      node.matches?.(TILE_SELECTOR) || node.querySelector?.(TILE_SELECTOR) || touchesToolbar(node)
-    );
-  }
+  const observer = addedNodesObserver(OBSERVED_SELECTOR, apply);
 
-  function onMutation(mutations) {
-    for (const m of mutations) {
-      for (const node of m.addedNodes) {
-        if (touchesTarget(node)) {
-          apply();
-          return;
-        }
-      }
-    }
-  }
-
-  function startObserver() {
-    if (observer) return;
-    observer = new MutationObserver(onMutation);
-    observer.observe(document.body, { childList: true, subtree: true });
-  }
-
-  function stopObserver() {
-    observer?.disconnect();
-    observer = null;
-  }
-
-  async function syncFromStorage() {
-    const { [STORAGE_KEY]: stored = {} } = await chrome.storage.local.get(STORAGE_KEY);
-    const next = stored[FEATURE_ID] === true;
-    if (next === enabled) return;
-    enabled = next;
-    if (enabled) {
-      ensureStyles();
+  registerToggle(FEATURE_ID, {
+    onEnable() {
+      ensureStyles(STYLE_ID, `[${HIDE_ATTR}="true"] { display: none !important; }`);
       apply();
-      startObserver();
-    } else {
-      stopObserver();
+      observer.start();
+    },
+    onDisable() {
+      observer.stop();
       removeClone();
       restoreTile();
-      removeStyles();
-    }
-  }
-
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes[STORAGE_KEY]) syncFromStorage();
+      removeStyles(STYLE_ID);
+    },
   });
-
-  syncFromStorage();
 })();

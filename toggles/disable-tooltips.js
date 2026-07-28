@@ -6,17 +6,15 @@
 // under `[data-istarget]` / copy-style `data-placement` rows stay untouched.
 
 (() => {
+  const { registerToggle, addedNodesObserver } = window.__tulbeltLib;
+
   const FEATURE_ID = "disable-tooltips";
-  const STORAGE_KEY = "toggles";
   const SUPPRESSED_ATTR = "data-tulbelt-tooltip-suppressed";
   const STASH_TOGGLE = "data-tulbelt-stashed-toggle";
   const STASH_PLACEMENT = "data-tulbelt-stashed-placement";
   const STASH_ISTARGET = "data-tulbelt-stashed-istarget";
   /** @deprecated kept for restore only */
   const LEGACY_STASH = "data-tulbelt-tooltip-stash";
-
-  let enabled = false;
-  let observer = null;
 
   function isVariablesCloneButton(el) {
     return el.closest("[data-tulbelt-variables-clone]");
@@ -106,47 +104,18 @@
     }
   }
 
-  function onMutation(mutations) {
-    for (const m of mutations) {
-      for (const node of m.addedNodes) {
-        if (!(node instanceof Element)) continue;
-        const candidates = [];
-        if (node.matches?.(".hover-button")) candidates.push(node);
-        const nested = node.querySelectorAll?.(".hover-button");
-        if (nested?.length) for (const el of nested) candidates.push(el);
-        for (const el of candidates) disableTrigger(el);
-      }
-    }
-  }
+  // disableTrigger is idempotent (guarded by SUPPRESSED_ATTR), so re-scanning
+  // the whole document on each matching mutation batch is safe.
+  const observer = addedNodesObserver(".hover-button", applyToAll);
 
-  function startObserver() {
-    if (observer) return;
-    observer = new MutationObserver(onMutation);
-    observer.observe(document.body, { childList: true, subtree: true });
-  }
-
-  function stopObserver() {
-    observer?.disconnect();
-    observer = null;
-  }
-
-  async function syncFromStorage() {
-    const { [STORAGE_KEY]: stored = {} } = await chrome.storage.local.get(STORAGE_KEY);
-    const next = stored[FEATURE_ID] === true;
-    if (next === enabled) return;
-    enabled = next;
-    if (enabled) {
+  registerToggle(FEATURE_ID, {
+    onEnable() {
       applyToAll();
-      startObserver();
-    } else {
-      stopObserver();
+      observer.start();
+    },
+    onDisable() {
+      observer.stop();
       restoreAll();
-    }
-  }
-
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes[STORAGE_KEY]) syncFromStorage();
+    },
   });
-
-  syncFromStorage();
 })();

@@ -7,7 +7,9 @@
 // Static value, shows a set picker and an option picker, and on option pick
 // writes the set's data type into the type select and the option's value into
 // the value input (native value setter + bubbled events, the same write-back
-// pattern as trigger-value-full-text). The pickers are a transient authoring
+// pattern as trigger-value-full-text). Rows whose Static value renders with
+// no data type select (some action parameters, e.g. Path) get only the value
+// write. The pickers are a transient authoring
 // aid: once the value is written, they disappear and the row is exactly the
 // manual Static value entry Tulip would have produced — Tulip never sees
 // anything else. There is deliberately no reverse flow (existing static
@@ -18,8 +20,9 @@
 // Both scripts share the `option-sets-builder` feature toggle.
 
 (() => {
+  const { registerToggle, ensureStyles, removeStyles } = window.__tulbeltLib;
+
   const FEATURE_ID = "option-sets-builder";
-  const STORAGE_KEY = "toggles";
   const LS_KEY = "tulbelt-option-sets";
 
   const DS_SELECT = 'select[data-testid="datasource-selector"]';
@@ -35,7 +38,7 @@
 
   const TYPE_LABELS = { text: "Text", integer: "Integer", number: "Number" };
 
-  let enabled = false;
+  let active = false;
   let observer = null;
   let scheduled = false;
   // real datasource <select> -> { proxy, container, setId }
@@ -95,14 +98,10 @@
 
   // ── Styles ──────────────────────────────────────────────────────────────────
 
-  function ensureStyles() {
-    if (document.getElementById(STYLE_ID)) return;
-    const style = document.createElement("style");
-    style.id = STYLE_ID;
-    // While a flow is active, hide the row's static type/value controls
-    // (rendered asynchronously after we select Static value) — but never the
-    // sibling div holding the datasource selector and our pickers.
-    style.textContent = `
+  // While a flow is active, hide the row's static type/value controls
+  // (rendered asynchronously after we select Static value) — but never the
+  // sibling div holding the datasource selector and our pickers.
+  const CSS = `
       ${DS_SELECT}[${REAL_ATTR}] { display: none !important; }
       [${FLOW_ATTR}] div.imports-triggers-editor-client-styles--triggerItemStyles:not(:has(${DS_SELECT})) { display: none !important; }
       select[${PICKER_ATTR}] { margin-left: 5px; max-width: 240px; }
@@ -111,13 +110,23 @@
         background: #1c69e1; color: #fff; border: none; border-radius: 3px; cursor: pointer;
       }
     `;
-    (document.head || document.documentElement).appendChild(style);
-  }
 
   // ── Proxy lifecycle ─────────────────────────────────────────────────────────
 
   function containerFor(real) {
     return real.closest('[data-testid^="value-specifier-selector"]') || real.parentElement;
+  }
+
+  // Tulip's segmented-group container collapses shared select borders with
+  // positional rules (:first-child / :not(:first-child)). The hidden real
+  // select still occupies its first-child slot, so anything we insert after it
+  // renders as a middle element — no left border or corner radii, sitting a
+  // few pixels left (the action-editor-frequent.js fix). Mirror the untouched
+  // right side inline; `cs` must be captured from a still-visible select.
+  function restoreLeftEdge(el, cs) {
+    el.style.borderLeftWidth = cs.borderRightWidth;
+    el.style.borderTopLeftRadius = cs.borderTopRightRadius;
+    el.style.borderBottomLeftRadius = cs.borderBottomRightRadius;
   }
 
   function buildProxy(real) {
@@ -139,6 +148,7 @@
     // Conceptually (and near-alphabetically) it belongs next to Static value.
     if (staticOption) staticOption.before(sentinel);
     else proxy.appendChild(sentinel);
+    restoreLeftEdge(proxy, getComputedStyle(real));
     proxy.value = real.value;
     proxy._ossReal = real;
     proxy.addEventListener("change", () => onProxyChange(real, proxy));
@@ -150,8 +160,11 @@
       startFlow(real, proxy);
       return;
     }
-    endFlow(real, proxy);
+    // Write-through must precede endFlow: endFlow re-syncs proxy.value from
+    // real.value, so running it first clobbers the pick with the stale value
+    // and the selection becomes a no-op.
     setNativeSelect(real, proxy.value);
+    endFlow(real, proxy);
   }
 
   function removePickers(container) {
@@ -202,6 +215,7 @@
     const setPicker = document.createElement("select");
     setPicker.setAttribute(PICKER_ATTR, "set");
     setPicker.className = real.className;
+    restoreLeftEdge(setPicker, getComputedStyle(proxy));
     setPicker.setAttribute("aria-label", "Select option set");
     {
       const placeholder = document.createElement("option");
@@ -233,6 +247,7 @@
     const optionPicker = document.createElement("select");
     optionPicker.setAttribute(PICKER_ATTR, "option");
     optionPicker.className = real.className;
+    restoreLeftEdge(optionPicker, getComputedStyle(flow.proxy));
     optionPicker.setAttribute("aria-label", "Select option");
     const placeholder = document.createElement("option");
     placeholder.value = "";
@@ -305,17 +320,26 @@
     const staticOpt = findOptionByText(real, "Static value");
     if (staticOpt && real.value !== staticOpt.value) setNativeSelect(real, staticOpt.value);
 
-    const typeSelect = await waitFor(() => container.querySelector(TYPE_SELECT));
-    if (!typeSelect) {
-      console.warn("[tulbelt] option-sets: static type select never rendered — aborting");
+    // Some rows render Static value as a bare value input with no data type
+    // select (e.g. an action's Path parameter). Wait for whichever control
+    // appears; both render in the same commit, so a value input with no type
+    // select beside it means a typeless row — skip the type write entirely.
+    const anyControl = await waitFor(
+      () => container.querySelector(TYPE_SELECT) || container.querySelector(VALUE_INPUT)
+    );
+    if (!anyControl) {
+      console.warn("[tulbelt] option-sets: static value controls never rendered — aborting");
       endFlow(real, proxy);
       return;
     }
-    const typeOpt = findOptionByText(typeSelect, TYPE_LABELS[set.dataType] || "");
-    if (typeOpt && typeSelect.value !== typeOpt.value) {
-      setNativeSelect(typeSelect, typeOpt.value);
-      // Let React finish committing the type change before touching the input.
-      await frames(2);
+    const typeSelect = container.querySelector(TYPE_SELECT);
+    if (typeSelect) {
+      const typeOpt = findOptionByText(typeSelect, TYPE_LABELS[set.dataType] || "");
+      if (typeOpt && typeSelect.value !== typeOpt.value) {
+        setNativeSelect(typeSelect, typeOpt.value);
+        // Let React finish committing the type change before touching the input.
+        await frames(2);
+      }
     }
 
     // Drop the pickers and unhide the native controls BEFORE writing: the
@@ -345,11 +369,23 @@
         ? real.nextElementSibling
         : null;
       if (!existing) {
+        // Only proxy dropdowns that can express the result. The flow writes
+        // through Static value, so a datasource list without that entry
+        // (some fields only accept Variable/Users-style sources) could never
+        // complete it — leave the native select alone.
+        if (!findOptionByText(real, "Static value")) continue;
+        // Build first: buildProxy measures the real select's border geometry,
+        // which needs it still visible — REAL_ATTR hides it.
+        const proxy = buildProxy(real);
         real.setAttribute(REAL_ATTR, "");
-        real.after(buildProxy(real));
+        real.after(proxy);
         continue;
       }
-      // Keep the proxy mirroring React-driven changes unless mid-flow.
+      // Keep the proxy mirroring React-driven changes unless mid-flow. The
+      // className carries Tulip's valid/invalid styling, which React swaps in
+      // place on the (hidden) real select — without mirroring it the proxy
+      // keeps whatever state it was born with, e.g. the empty-row red border.
+      if (existing.className !== real.className) existing.className = real.className;
       if (!flows.has(real) && existing.value !== real.value) existing.value = real.value;
     }
   }
@@ -359,14 +395,21 @@
     scheduled = true;
     requestAnimationFrame(() => {
       scheduled = false;
-      if (enabled) ensureAll();
+      if (active) ensureAll();
     });
   }
 
   function start() {
-    ensureStyles();
+    ensureStyles(STYLE_ID, CSS);
     observer = new MutationObserver(scheduleEnsure);
-    observer.observe(document.body, { childList: true, subtree: true });
+    // attributeFilter: React flips validity styling by rewriting class on the
+    // real select in place — a childList-only observer never sees that.
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class"],
+    });
     ensureAll();
   }
 
@@ -376,21 +419,17 @@
     for (const el of document.querySelectorAll(`[${FLOW_ATTR}]`)) el.removeAttribute(FLOW_ATTR);
     for (const el of document.querySelectorAll(`[${PICKER_ATTR}], select[${PROXY_ATTR}]`)) el.remove();
     for (const real of document.querySelectorAll(`[${REAL_ATTR}]`)) real.removeAttribute(REAL_ATTR);
-    document.getElementById(STYLE_ID)?.remove();
+    removeStyles(STYLE_ID);
   }
 
-  async function syncFromStorage() {
-    const { [STORAGE_KEY]: stored = {} } = await chrome.storage.local.get(STORAGE_KEY);
-    const next = stored[FEATURE_ID] === true;
-    if (next === enabled) return;
-    enabled = next;
-    if (enabled) start();
-    else stop();
-  }
-
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes[STORAGE_KEY]) syncFromStorage();
+  registerToggle(FEATURE_ID, {
+    onEnable() {
+      active = true;
+      start();
+    },
+    onDisable() {
+      active = false;
+      stop();
+    },
   });
-
-  syncFromStorage();
 })();

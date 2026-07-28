@@ -6,8 +6,9 @@
 // into the final shade).
 
 (() => {
+  const { registerToggle, ensureStyles, removeStyles } = window.__tulbeltLib;
+
   const FEATURE_ID = "dark-mode";
-  const STORAGE_KEY = "toggles";
   const ROOT_CLASS = "tulbelt-dark";
   const STYLE_ID = "tulbelt-dark-styles";
 
@@ -64,37 +65,14 @@
   }
 `;
 
-  let enabled = false;
-
-  function ensureStyles() {
-    if (document.getElementById(STYLE_ID)) return;
-    const style = document.createElement("style");
-    style.id = STYLE_ID;
-    style.textContent = DARK_CSS;
-    (document.head || document.documentElement).appendChild(style);
-  }
-
-  function removeStyles() {
-    document.getElementById(STYLE_ID)?.remove();
-  }
-
-  async function syncFromStorage() {
-    const { [STORAGE_KEY]: stored = {} } = await chrome.storage.local.get(STORAGE_KEY);
-    const next = stored[FEATURE_ID] === true;
-    if (next === enabled) return;
-    enabled = next;
-    if (enabled) {
-      ensureStyles();
+  registerToggle(FEATURE_ID, {
+    onEnable() {
+      ensureStyles(STYLE_ID, DARK_CSS);
       document.documentElement.classList.add(ROOT_CLASS);
-    } else {
+    },
+    onDisable() {
       document.documentElement.classList.remove(ROOT_CLASS);
-      removeStyles();
-    }
-  }
-
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes[STORAGE_KEY]) syncFromStorage();
+      removeStyles(STYLE_ID);
+    },
   });
-
-  syncFromStorage();
 })();

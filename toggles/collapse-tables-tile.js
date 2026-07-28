@@ -52,8 +52,9 @@
 //   data attribute and shown only when collapsed.
 
 (() => {
+  const { registerToggle, ensureStyles, removeStyles } = window.__tulbeltLib;
+
   const FEATURE_ID = "collapse-tables-tile";
-  const STORAGE_KEY = "toggles";
   const STYLE_ID = "tulbelt-collapse-tables-tile-styles";
   const APP_EDITOR_PATH_RE = /^(?:\/w\/[^/]+)?\/apps\/[^/]+\/versions\/[^/]+/;
 
@@ -65,7 +66,7 @@
   const TILE_ATTR = "data-tulbelt-tbl-tile"; // on the rows' shared parent (the Tables tile container)
   const ATTRS = [ROW_ATTR, CONTENT_ATTR, NAME_ATTR, COUNTS_ATTR, CARET_ATTR, TILE_ATTR];
 
-  let enabled = false;
+  let active = false;
   let observer = null;
   let applyScheduled = false;
 
@@ -93,11 +94,7 @@
 
   installHistoryLocationHooks();
 
-  function ensureStyles() {
-    if (document.getElementById(STYLE_ID)) return;
-    const style = document.createElement("style");
-    style.id = STYLE_ID;
-    style.textContent = `
+  const CSS = `
 [${TILE_ATTR}="true"] {
   overflow-x: clip;
 }
@@ -158,12 +155,6 @@
   pointer-events: none;
   white-space: pre-line;
 }`;
-    (document.head || document.documentElement).appendChild(style);
-  }
-
-  function removeStyles() {
-    document.getElementById(STYLE_ID)?.remove();
-  }
 
   function countPlaceholders(content) {
     return content.querySelectorAll(`div[aria-haspopup="menu"]:not([${NAME_ATTR}]) > button[title]`)
@@ -267,7 +258,7 @@
   }
 
   function onClick(e) {
-    if (!enabled) return;
+    if (!active) return;
     const caret = e.target.closest?.(`[${CARET_ATTR}]`);
     if (!caret) return;
     const row = caret.closest(`[${ROW_ATTR}]`);
@@ -328,7 +319,7 @@
   }
 
   function onLocationMaybeChanged() {
-    if (!enabled) return;
+    if (!active) return;
     applyAll();
   }
 
@@ -343,27 +334,20 @@
     observer = null;
   }
 
-  async function syncFromStorage() {
-    const { [STORAGE_KEY]: stored = {} } = await chrome.storage.local.get(STORAGE_KEY);
-    const next = stored[FEATURE_ID] === true;
-    if (next === enabled) return;
-    enabled = next;
-    if (enabled) {
-      ensureStyles();
+  registerToggle(FEATURE_ID, {
+    onEnable() {
+      active = true;
+      ensureStyles(STYLE_ID, CSS);
       document.addEventListener("click", onClick, true);
       applyAll();
       startObserver();
-    } else {
+    },
+    onDisable() {
+      active = false;
       stopObserver();
       document.removeEventListener("click", onClick, true);
       restoreAll();
-      removeStyles();
-    }
-  }
-
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes[STORAGE_KEY]) syncFromStorage();
+      removeStyles(STYLE_ID);
+    },
   });
-
-  syncFromStorage();
 })();

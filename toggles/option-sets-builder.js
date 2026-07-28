@@ -16,8 +16,9 @@
 // validation, never silent coercion.
 
 (() => {
+  const { registerToggle, ensureStyles, removeStyles } = window.__tulbeltLib;
+
   const FEATURE_ID = "option-sets-builder";
-  const STORAGE_KEY = "toggles";
   const FAKE_PATH = "/account/option-sets";
   const LI_ATTR = "data-tulbelt-osb-item";
   const HIDDEN_ATTR = "data-tulbelt-osb-hidden";
@@ -51,7 +52,7 @@
   let data = null;
   let storageError = "";
   // UI state survives navigating away and back within the tab.
-  const ui = { selectedId: null, creating: false, confirmDelete: false, focus: null };
+  const ui = { selectedId: null, creating: false, importing: false, confirmDelete: false, focus: null };
 
   function newId(prefix) {
     return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
@@ -99,6 +100,69 @@
     if (type === "integer") return !/^-?\d+$/.test(s);
     if (type === "number") return !Number.isFinite(Number(s));
     return false;
+  }
+
+  // ── Export / import ─────────────────────────────────────────────────────────
+
+  // Internal ids and timestamps are local bookkeeping — stripped on export,
+  // regenerated on import.
+  function exportText() {
+    const payload = {
+      tulbelt: "option-sets",
+      version: 1,
+      sets: data.sets.map((set) => ({
+        name: set.name,
+        description: set.description || "",
+        dataType: set.dataType,
+        options: set.options.map((o) => ({
+          value: o.value == null ? "" : String(o.value),
+          description: o.description || "",
+        })),
+      })),
+    };
+    return JSON.stringify(payload, null, 2);
+  }
+
+  // Returns { sets } ready to append, or { error } with nothing changed.
+  // Unknown fields are ignored and version > 1 is accepted so payloads from
+  // newer Tulbelt versions still import when the shape checks pass.
+  function parseImportPayload(text) {
+    if (!text.trim()) return { error: "Nothing to import." };
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (err) {
+      return { error: `Not valid JSON (${err.message}).` };
+    }
+    if (!parsed || parsed.tulbelt !== "option-sets" || !Array.isArray(parsed.sets)) {
+      return { error: "This doesn't look like a Tulbelt option sets export." };
+    }
+    const sets = [];
+    for (const raw of parsed.sets) {
+      if (!raw || typeof raw.name !== "string" || !raw.name.trim()) {
+        return { error: "Every set in the export needs a name." };
+      }
+      if (!DATA_TYPES.some((t) => t.id === raw.dataType)) {
+        return { error: `Set "${raw.name}" has an unknown data type "${raw.dataType}".` };
+      }
+      if (!Array.isArray(raw.options)) {
+        return { error: `Set "${raw.name}" has no options list.` };
+      }
+      sets.push({
+        id: newId("os"),
+        name: raw.name,
+        description: typeof raw.description === "string" ? raw.description : "",
+        dataType: raw.dataType,
+        options: raw.options.map((o) => ({
+          id: newId("op"),
+          value: o?.value == null ? "" : String(o.value),
+          description: o?.description == null ? "" : String(o.description),
+        })),
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    }
+    return { sets };
   }
 
   // ── Builder UI ──────────────────────────────────────────────────────────────
@@ -150,12 +214,46 @@
     newBtn.type = "button";
     newBtn.addEventListener("click", () => {
       ui.creating = true;
+      ui.importing = false;
       ui.selectedId = null;
       ui.confirmDelete = false;
       ui.focus = ".osb-create-name";
       render();
     });
     panel.appendChild(newBtn);
+
+    const tools = el("div", "osb-list-tools");
+    const exportBtn = el("button", "osb-btn", "Export all");
+    exportBtn.type = "button";
+    exportBtn.disabled = data.sets.length === 0;
+    exportBtn.addEventListener("click", () => {
+      const count = data.sets.length;
+      navigator.clipboard.writeText(exportText()).then(
+        () => {
+          exportBtn.textContent = `Copied ${count} set${count === 1 ? "" : "s"} ✓`;
+          setTimeout(() => {
+            if (exportBtn.isConnected) exportBtn.textContent = "Export all";
+          }, 1500);
+        },
+        (err) => {
+          storageError = `Couldn't copy to clipboard: ${err.message}`;
+          renderBanner();
+        }
+      );
+    });
+    tools.appendChild(exportBtn);
+    const importBtn = el("button", "osb-btn", "Import");
+    importBtn.type = "button";
+    importBtn.addEventListener("click", () => {
+      ui.importing = true;
+      ui.creating = false;
+      ui.selectedId = null;
+      ui.confirmDelete = false;
+      ui.focus = ".osb-import-text";
+      render();
+    });
+    tools.appendChild(importBtn);
+    panel.appendChild(tools);
 
     if (data.sets.length === 0) {
       panel.appendChild(el("p", "osb-hint", "No option sets yet."));
@@ -176,6 +274,7 @@
       row.addEventListener("click", () => {
         ui.selectedId = set.id;
         ui.creating = false;
+        ui.importing = false;
         ui.confirmDelete = false;
         render();
       });
@@ -189,6 +288,8 @@
     const panel = el("section", "osb-editor");
     if (ui.creating) {
       panel.appendChild(renderCreateForm());
+    } else if (ui.importing) {
+      panel.appendChild(renderImportForm());
     } else {
       const set = selectedSet();
       if (set) panel.appendChild(renderSetEditor(set));
@@ -263,6 +364,54 @@
       render();
     });
     actions.appendChild(create);
+    actions.appendChild(cancel);
+    form.appendChild(actions);
+    return form;
+  }
+
+  function renderImportForm() {
+    const form = el("div", "osb-create");
+    form.appendChild(el("h2", "", "Import option sets"));
+    form.appendChild(
+      el(
+        "p",
+        "osb-hint",
+        "Paste an export from another Tulbelt user. Imported sets are added alongside your existing ones."
+      )
+    );
+    const error = el("div", "osb-import-error");
+    error.style.display = "none";
+    form.appendChild(error);
+
+    const text = el("textarea", "osb-input osb-import-text");
+    text.rows = 10;
+    text.placeholder = '{ "tulbelt": "option-sets", ... }';
+    form.appendChild(text);
+
+    const actions = el("div", "osb-actions");
+    const doImport = el("button", "osb-btn osb-btn-primary", "Import");
+    doImport.type = "button";
+    doImport.addEventListener("click", () => {
+      const result = parseImportPayload(text.value);
+      if (result.error) {
+        // No re-render — keep the pasted text so the user can fix it.
+        error.textContent = result.error;
+        error.style.display = "";
+        return;
+      }
+      data.sets.push(...result.sets);
+      saveData();
+      ui.importing = false;
+      ui.selectedId = result.sets[0]?.id ?? null;
+      render();
+    });
+    const cancel = el("button", "osb-btn", "Cancel");
+    cancel.type = "button";
+    cancel.addEventListener("click", () => {
+      ui.importing = false;
+      render();
+    });
+    actions.appendChild(doImport);
     actions.appendChild(cancel);
     form.appendChild(actions);
     return form;
@@ -465,18 +614,17 @@
 
   // ── Styles / container ──────────────────────────────────────────────────────
 
-  function ensureStyles() {
-    if (document.getElementById(STYLE_ID)) return;
-    const style = document.createElement("style");
-    style.id = STYLE_ID;
-    style.textContent = `
+  const CSS = `
       [${HIDDEN_ATTR}] { display: none !important; }
       #${CONTAINER_ID} { flex: 1 1 auto; min-width: 0; overflow: auto; padding: 24px 40px; }
       #${CONTAINER_ID} h1 { font-size: 1.5em; margin: 0 0 16px; }
       #${CONTAINER_ID} h2 { font-size: 1.15em; margin: 0 0 12px; }
+      #${CONTAINER_ID} .osb-disclaimer { background: #eef4fd; color: #45526b; border: 1px solid #c9dcf7; border-radius: 4px; padding: 8px 12px; margin-bottom: 16px; }
       #${CONTAINER_ID} .osb-banner { background: #fdecea; color: #b3261e; border: 1px solid #f5c6c2; border-radius: 4px; padding: 8px 12px; margin-bottom: 12px; }
       #${CONTAINER_ID} .osb-layout { display: flex; gap: 24px; align-items: flex-start; }
       #${CONTAINER_ID} .osb-list { flex: 0 0 240px; display: flex; flex-direction: column; gap: 8px; }
+      #${CONTAINER_ID} .osb-list-tools { display: flex; gap: 6px; }
+      #${CONTAINER_ID} .osb-list-tools .osb-btn { flex: 1 1 0; white-space: nowrap; }
       #${CONTAINER_ID} .osb-set-list { display: flex; flex-direction: column; gap: 4px; }
       #${CONTAINER_ID} .osb-set-row { display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 8px 10px; border: 1px solid #d5dae2; border-radius: 6px; background: #fff; cursor: pointer; font: inherit; }
       #${CONTAINER_ID} .osb-set-row:hover { border-color: #1c69e1; }
@@ -509,15 +657,22 @@
       #${CONTAINER_ID} .osb-move .osb-btn-icon { padding: 0 6px; font-size: 0.7em; }
       #${CONTAINER_ID} .osb-opt-value { flex: 0 1 200px; min-width: 100px; }
       #${CONTAINER_ID} .osb-opt-desc { flex: 1 1 auto; min-width: 0; }
+      #${CONTAINER_ID} .osb-import-text { width: 100%; box-sizing: border-box; resize: vertical; font-family: ui-monospace, Menlo, monospace; font-size: 0.85em; margin-bottom: 4px; }
+      #${CONTAINER_ID} .osb-import-error { background: #fdecea; color: #b3261e; border: 1px solid #f5c6c2; border-radius: 4px; padding: 8px 12px; margin-bottom: 8px; }
     `;
-    (document.head || document.documentElement).appendChild(style);
-  }
 
   function buildContainer() {
     const container = document.createElement("div");
     container.id = CONTAINER_ID;
     const title = el("h1", "", "Option Sets");
     container.appendChild(title);
+    container.appendChild(
+      el(
+        "div",
+        "osb-disclaimer",
+        "This is a local-only menu provided by the Tulbelt plugin. Option sets are stored in your browser and written to Tulip as regular static values when used. They will not be shared with any other users, as Tulbelt does not have access to any data storage other than your browser."
+      )
+    );
     container.appendChild(el("div", "osb-root"));
     // Reload from localStorage on every activation so edits from another tab
     // on this tenant show up after navigating away and back.
@@ -587,7 +742,7 @@
     if (active) return;
     if (!isFakePath()) lastRealPath = location.pathname;
     active = true;
-    ensureStyles();
+    ensureStyles(STYLE_ID, CSS);
     applyActive();
   }
 
@@ -671,7 +826,7 @@
   }
 
   function start() {
-    ensureStyles();
+    ensureStyles(STYLE_ID, CSS);
     coldLoadWanted = isFakePath();
     document.addEventListener("click", onDocumentClick, true);
     window.addEventListener("popstate", onPopState);
@@ -687,21 +842,17 @@
     window.removeEventListener("popstate", onPopState);
     deactivate({ restoreUrl: true });
     removeLi();
-    document.getElementById(STYLE_ID)?.remove();
+    removeStyles(STYLE_ID);
   }
 
-  async function syncFromStorage() {
-    const { [STORAGE_KEY]: stored = {} } = await chrome.storage.local.get(STORAGE_KEY);
-    const next = stored[FEATURE_ID] === true;
-    if (next === enabled) return;
-    enabled = next;
-    if (enabled) start();
-    else stop();
-  }
-
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes[STORAGE_KEY]) syncFromStorage();
+  registerToggle(FEATURE_ID, {
+    onEnable() {
+      enabled = true;
+      start();
+    },
+    onDisable() {
+      enabled = false;
+      stop();
+    },
   });
-
-  syncFromStorage();
 })();

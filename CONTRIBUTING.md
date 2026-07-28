@@ -49,13 +49,18 @@ changes that add a toolchain or framework will be asked to justify themselves.
    },
    ```
 2. Create `toggles/my-feature.js` following the existing pattern. Copy a small
-   one (e.g. `toggles/strip-tab-title-prefix.js`) and keep its shape:
+   one (e.g. `toggles/hide-legacy.js`) and keep its shape:
    - wrap everything in `(() => { ... })()`
-   - `const FEATURE_ID = 'my-feature';` and `const STORAGE_KEY = 'toggles';`
-   - a `syncFromStorage()` that reads the toggle, no-ops if unchanged, and
-     applies **or** reverts
-   - a `chrome.storage.onChanged` listener that re-runs `syncFromStorage()`
-   - call `syncFromStorage()` once at the end
+   - pull shared helpers from `window.__tulbeltLib` (defined in
+     `toggles/lib.js`, loaded first in the default content_scripts array):
+     `registerToggle` (storage sync + enable/disable lifecycle),
+     `addedNodesObserver`, `ensureStyles`/`removeStyles`
+   - `registerToggle(FEATURE_ID, { onEnable, onDisable })` — apply on enable,
+     fully revert on disable
+   - scripts in the `world: "MAIN"` or `all_frames` arrays can **not** use
+     `__tulbeltLib` (different world/frames) — those keep the inline
+     `syncFromStorage()` + `chrome.storage.onChanged` pattern (see
+     `toggles/strip-tab-title-prefix.js` for the inline shape)
 3. Register the file (as `toggles/my-feature.js`) in `manifest.json` under
    `content_scripts`. Add it to the
    default array, unless it needs the page's own JS context

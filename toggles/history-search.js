@@ -13,6 +13,8 @@
 // recorded history in storage — it is data, not a page mutation.
 
 (() => {
+  const { addedNodesObserver } = window.__tulbeltLib;
+
   const FEATURE_ID = "history-search";
   const TOGGLES_KEY = "toggles";
   const HISTORY_KEY = "tulbelt:history";
@@ -170,7 +172,6 @@
     "</svg>";
 
   let host = null;
-  let navObserver = null;
   let root = null;
   let inputEl = null;
   let listEl = null;
@@ -458,33 +459,15 @@
     anchorWrap.parentElement.insertBefore(wrap, anchorWrap);
   }
 
-  function touchesNav(node) {
-    if (!(node instanceof Element)) return false;
-    return node.matches?.(NAV_ANCHOR) || node.querySelector?.(NAV_ANCHOR);
-  }
-
-  function onNavMutation(mutations) {
-    for (const m of mutations) {
-      for (const node of m.addedNodes) {
-        if (touchesNav(node)) {
-          ensureNavButton();
-          return;
-        }
-      }
-    }
-  }
+  const navObserver = addedNodesObserver(NAV_ANCHOR, ensureNavButton);
 
   function startNavButton() {
     ensureNavButton();
-    if (!navObserver) {
-      navObserver = new MutationObserver(onNavMutation);
-      navObserver.observe(document.body, { childList: true, subtree: true });
-    }
+    navObserver.start();
   }
 
   function stopNavButton() {
-    navObserver?.disconnect();
-    navObserver = null;
+    navObserver.stop();
     removeNavButton();
   }
 

@@ -38,14 +38,6 @@
     h: "context-pane-tool-size-h",
   };
 
-  const DEBUG = true;
-  function log(...args) {
-    if (!DEBUG) return;
-    try {
-      console.log("[tulbelt:snap]", location.host + location.pathname, ...args);
-    } catch (_) {}
-  }
-
   let enabled = false;
   let armed = false;
   let moved = false;
@@ -192,9 +184,7 @@
         input.blur();
       } catch (_) {}
       input.dispatchEvent(new Evt("focusout", { bubbles: true }));
-    } catch (e) {
-      log("setInputValue failed", e?.message || e);
-    }
+    } catch (_) {}
   }
 
   function changed(a, b) {
@@ -217,7 +207,6 @@
     if (Math.abs(snapped - afterVal) <= EPSILON) return; // already on grid
     const el = findInput(testid);
     if (!el) return;
-    log("snap", testid, afterVal, "->", snapped);
     setInputValue(el, snapped);
   }
 
@@ -236,18 +225,12 @@
   function onPointerDown(e) {
     if (!enabled || !pathMatches()) return;
     if (e.button !== 0) return; // primary button only
-    log("pointerdown", {
-      canvas: withinCanvas(e.target),
-      target: e.target?.tagName,
-      cls: typeof e.target?.className === "string" ? e.target.className : "",
-    });
     if (!withinCanvas(e.target)) return;
     armed = true;
     moved = false;
     startX = e.clientX;
     startY = e.clientY;
     before = null; // captured on the first move, once Tulip has selected
-    log("pointerdown armed");
   }
 
   function onPointerMove(e) {
@@ -261,7 +244,6 @@
       const dy = e.clientY - startY;
       if (Math.hypot(dx, dy) > DRAG_THRESHOLD_PX) {
         moved = true;
-        log("drag detected; before =", before);
       }
     }
   }
@@ -285,10 +267,9 @@
 
     let done = false;
     let prev = null;
-    const snapNow = (after, reason) => {
+    const snapNow = (after) => {
       if (done) return;
       done = true;
-      log("snap", reason, "before =", start, "after =", after);
       snapField(INPUT_TESTIDS.x, start.x, after.x);
       snapField(INPUT_TESTIDS.y, start.y, after.y);
       snapField(INPUT_TESTIDS.w, start.w, after.w);
@@ -301,15 +282,13 @@
         const after = readPlacement();
         const movedFromStart = placementChanged(start, after);
         const stable = prev !== null && !placementChanged(prev, after);
-        log("settle", ms + "ms", "after =", after, { movedFromStart, stable });
         if (movedFromStart && stable) {
-          snapNow(after, "stable@" + ms + "ms");
+          snapNow(after);
           return;
         }
         prev = after;
-        if (i === SETTLE_DELAYS_MS.length - 1) {
-          if (movedFromStart) snapNow(after, "last@" + ms + "ms");
-          else log("settle: no change detected within window");
+        if (i === SETTLE_DELAYS_MS.length - 1 && movedFromStart) {
+          snapNow(after);
         }
       }, ms);
     });
@@ -322,10 +301,7 @@
       doc.addEventListener("pointermove", onPointerMove, true);
       doc.addEventListener("pointerup", onPointerUp, true);
       hookedDocs.push(doc);
-      log("hooks attached", doc.location?.href || "(doc)");
-    } catch (e) {
-      log("install hooks failed", e?.message || e);
-    }
+    } catch (_) {}
   }
 
   function installHooks() {
@@ -354,11 +330,8 @@
       if (raw[STORAGE_KEY] && typeof raw[STORAGE_KEY] === "object") {
         stored = raw[STORAGE_KEY];
       }
-    } catch (e) {
-      log("storage read failed", e?.message || e);
-    }
+    } catch (_) {}
     const next = stored[FEATURE_ID] === true;
-    log("syncFromStorage; enabled =", next, "path =", pathMatches());
     if (next === enabled) return;
     enabled = next;
     if (enabled) {

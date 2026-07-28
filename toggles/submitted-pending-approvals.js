@@ -168,14 +168,25 @@
   // ── Styles ──────────────────────────────────────────────────────────────────
 
   const STYLES = `
+    /* The pill is injected as the h1's sibling inside a plain div, so without
+       this the pill sits on the text baseline. Target the direct parent
+       structurally — styled-component class hashes change between builds. */
+    *:has(> .tulbelt-sba-pill) {
+      display: flex; align-items: center; flex-wrap: wrap;
+      row-gap: 6px; min-width: 0;
+    }
+    *:has(> .tulbelt-sba-pill) > h1 {
+      margin: 0; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
     .tulbelt-sba-pill {
-      display: inline-flex; align-items: center;
+      display: inline-flex; align-items: center; gap: 2px;
       background: #f0f4f8; border: 1px solid #d0d9e2; border-radius: 6px;
-      padding: 2px; margin-left: 14px; vertical-align: middle;
+      padding: 3px; margin-left: 12px; vertical-align: middle;
       font-family: inherit; flex-shrink: 0;
     }
     .tulbelt-sba-btn {
-      padding: 4px 13px; border: none; background: transparent;
+      padding: 4px 12px; border: none; background: transparent;
       border-radius: 4px; cursor: pointer; font-size: 13px;
       font-family: inherit; color: #4a6078; line-height: 1.4;
       transition: background 0.1s, color 0.1s; white-space: nowrap;

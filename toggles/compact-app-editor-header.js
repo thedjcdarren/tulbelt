@@ -3,8 +3,9 @@
 // subheader strip and palette row. One toggle drives it all.
 
 (() => {
+  const { registerToggle, ensureStyles, removeStyles } = window.__tulbeltLib;
+
   const FEATURE_ID = "compact-app-editor-header";
-  const STORAGE_KEY = "toggles";
   const STYLE_ID = "tulbelt-compact-app-editor-header-styles";
 
   const SVG_PALETTE_BUTTON_IDS = [
@@ -18,8 +19,6 @@
     "app-editor-custom",
   ];
   const ICON_FONT_BUTTON_IDS = ["app-editor-forward", "app-editor-back"];
-
-  let enabled = false;
 
   function buildCss() {
     const svgSelector = SVG_PALETTE_BUTTON_IDS.map((id) => `#${id} svg[width="32"]`).join(", ");
@@ -46,30 +45,12 @@ ${workspaceLabel}
 ${tighterVerticalBars}`;
   }
 
-  function ensureStyles() {
-    if (document.getElementById(STYLE_ID)) return;
-    const style = document.createElement("style");
-    style.id = STYLE_ID;
-    style.textContent = buildCss();
-    (document.head || document.documentElement).appendChild(style);
-  }
-
-  function removeStyles() {
-    document.getElementById(STYLE_ID)?.remove();
-  }
-
-  async function syncFromStorage() {
-    const { [STORAGE_KEY]: stored = {} } = await chrome.storage.local.get(STORAGE_KEY);
-    const next = stored[FEATURE_ID] === true;
-    if (next === enabled) return;
-    enabled = next;
-    if (enabled) ensureStyles();
-    else removeStyles();
-  }
-
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes[STORAGE_KEY]) syncFromStorage();
+  registerToggle(FEATURE_ID, {
+    onEnable() {
+      ensureStyles(STYLE_ID, buildCss());
+    },
+    onDisable() {
+      removeStyles(STYLE_ID);
+    },
   });
-
-  syncFromStorage();
 })();
