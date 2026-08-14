@@ -81,20 +81,32 @@ permissions, so they're **read off the live header** and cached in
 `chrome.storage.local` under `flatNavMenus` (keyed by host + workspace, 7-day
 TTL). There are two routes in, because one of them doesn't work everywhere:
 
-1. **A synthetic hover** on each dropdown anchor, tried once per page with every
-   popper pinned `visibility: hidden` so nothing flashes open. This works on some
-   Tulip builds and on none of the others — the production header's dropdowns
-   ignore dispatched pointer/mouse events entirely, however faithfully shaped.
-   (Verified against the real site: a real cursor opens every menu, a dispatched
-   one opens none, with `aria-expanded` and the popper's inline `display`
-   unchanged. Likely an `isTrusted` or real-cursor-position check in whatever
-   floating-element library the production header uses.)
-2. **A MutationObserver on each trigger's own popper**, which reads the menu when
-   the *user's* cursor opens it. No synthetic events, no interference; it costs
-   one hover per menu, once, and then it's cached. When the synthetic route
-   comes up empty, click-through routing is switched off at the same time — it
-   re-opens menus the same way, so there's no point making the user wait for a
-   timeout to find that out.
+1. **A MutationObserver on each trigger's own popper**, armed within milliseconds
+   of the header appearing and before anything slow runs. It reads a menu the
+   moment Tulip fills it in, whoever opened it — including the user's own cursor.
+   No synthetic events, no interference.
+2. **A probe** that asks each dropdown to open, trying four routes in turn
+   (hover on the anchor, hover on its parent, a document-level pointer move, and
+   focus + ArrowDown — `aria-haspopup="menu"` implies a keyboard route, which has
+   nothing to do with pointer trust). Nothing here navigates, and the keyboard
+   route bails out rather than take focus off something the user is using.
+   Whatever it opens, the watcher above records.
+
+The probe exists because it removes the need for the user to do anything, and it
+works on plenty of builds — but not on production Tulip, whose dropdowns ignore
+dispatched pointer events entirely, however faithfully shaped. (Verified against
+the real site with the toggle off: a real cursor opens every menu, a dispatched
+one opens none, `aria-expanded` and the popper's inline `display` unchanged.
+Likely an `isTrusted` or real-cursor-position check in whatever floating-element
+library the production header uses.) Where that's the case the watcher carries
+it, at a cost of one hover per menu, once, before the answer is cached.
+
+Order matters here and was got wrong once: the watcher used to be armed only
+*after* the probe gave up, so a hover made on a fresh page — the most likely
+moment for one — landed in the gap and was missed, which is what made this feel
+like it needed several tries. When the probe comes up empty, click-through
+routing is switched off at the same time, since it re-opens menus the same way
+and there's no point charging the user a timeout to discover that.
 
 Reads are scoped to the trigger's own sibling popper, never a document-wide
 sweep: a Tulip page carries ~18 poppers and a stray open one gets recorded

@@ -53,7 +53,9 @@
   const PARENT_ATTR = "data-tulbelt-flat-nav-parent";
 
   const POLL_MS = 50;
-  const MENU_OPEN_TIMEOUT_MS = 1500;
+  // Per open strategy, not per menu. Kept short because there are several of
+  // them and the watcher is already armed — the probe is a bonus, not the plan.
+  const MENU_OPEN_TIMEOUT_MS = 700;
   const MENU_CLOSE_TIMEOUT_MS = 800;
   const MENU_SETTLE_MS = 250;
   const CLICK_PROBE_TIMEOUT_MS = 700;
@@ -309,10 +311,70 @@
           .filter((row) => row.href && row.label);
   };
 
-  // Opens `anchor`'s menu and returns its links. Waits for two consecutive
-  // identical non-empty reads so a half-rendered menu is never recorded.
-  async function readMenu(anchor) {
-    hoverIn(anchor);
+  // Moves the pointer over the anchor at document level, for a floating-element
+  // library that tracks the cursor globally rather than listening on its target.
+  function movePointerOver(anchor) {
+    const point = pointAt(anchor);
+    for (const target of [document, anchor.parentElement, anchor]) {
+      if (!target) continue;
+      firePointer(anchor, "pointermove", point);
+      target.dispatchEvent(
+        new MouseEvent("mousemove", { bubbles: true, cancelable: true, view: window, ...point }),
+      );
+    }
+    return true;
+  }
+
+  // aria-haspopup="menu" implies the menu is reachable from the keyboard, which
+  // is a route that has nothing to do with pointer trust. Never takes focus off
+  // something the user is actually using.
+  function openWithKeyboard(anchor) {
+    const focused = document.activeElement;
+    if (focused && focused !== document.body && focused !== document.documentElement) return false;
+    anchor.focus({ preventScroll: true });
+    for (const type of ["keydown", "keyup"]) {
+      anchor.dispatchEvent(
+        new KeyboardEvent(type, {
+          key: "ArrowDown",
+          code: "ArrowDown",
+          keyCode: 40,
+          which: 40,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    }
+    return true;
+  }
+
+  // Ways to ask a dropdown to open, least intrusive first. None of them navigate
+  // or take focus from the user. The production header answers none — that's
+  // what the watcher is for — but other builds answer the first, and asking is
+  // cheap now that the watcher is armed before any of this runs.
+  const OPEN_STRATEGIES = [
+    { name: "hover", open: (a) => (hoverIn(a), true), close: hoverOut },
+    {
+      name: "hover-parent",
+      open: (a) => (a.parentElement ? (hoverIn(a.parentElement), hoverIn(a), true) : false),
+      close: (a) => {
+        hoverOut(a);
+        if (a.parentElement) hoverOut(a.parentElement);
+      },
+    },
+    { name: "pointer-move", open: movePointerOver, close: hoverOut },
+    {
+      name: "keyboard",
+      open: openWithKeyboard,
+      close: (a) => {
+        a.blur();
+        hoverOut(a);
+      },
+    },
+  ];
+
+  // Waits for two consecutive identical non-empty reads so a half-rendered menu
+  // is never recorded.
+  async function settleMenu(anchor) {
     let previous = "";
     for (let waited = 0; waited < MENU_OPEN_TIMEOUT_MS; waited += POLL_MS) {
       await delay(POLL_MS);
@@ -322,6 +384,29 @@
       previous = signature;
     }
     return [];
+  }
+
+  // Strategies stack rather than take turns: closing between them would cancel a
+  // hover-intent timer that hadn't fired yet, so a header with a lazy delay
+  // would never open no matter how long the probe ran. Everything is undone
+  // together at the end.
+  async function readMenu(anchor) {
+    const opened = [];
+    try {
+      for (const strategy of OPEN_STRATEGIES) {
+        if (!strategy.open(anchor)) continue;
+        opened.push(strategy);
+        const items = await settleMenu(anchor);
+        if (items.length) {
+          trace("menu opened", { key: groupKeyOf(anchor), via: strategy.name });
+          return items;
+        }
+      }
+      return [];
+    } finally {
+      for (const strategy of opened.reverse()) strategy.close(anchor);
+      await closeMenu(anchor);
+    }
   }
 
   async function closeMenu(anchor) {
@@ -442,6 +527,10 @@
         cache = { key, groups: stored.groups };
         return cache.groups;
       }
+      // Armed before anything slow runs. The probe below can take seconds, and
+      // a hover during that window is exactly the hover a user makes on a fresh
+      // page — missing it is what made this feel like it needed several tries.
+      watchForRealHovers(anchors, key);
       if (!probed) {
         probed = true;
         await probe(anchors);
@@ -455,10 +544,8 @@
       // that it's empty, and flattening the rest around it leaves a half-done
       // nav that reads as a bug.
       const groups = assemble(anchors);
-      if (!groups) {
-        watchForRealHovers(anchors, key);
-        return null;
-      }
+      if (!groups) return null; // the watcher stays armed and finishes the job
+      stopWatching();
       cache = { key, groups };
       await writeCache(key, { v: CACHE_VERSION, at: Date.now(), groups });
       return groups;
