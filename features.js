@@ -218,6 +218,14 @@ export const FEATURES = [
     major: true,
   },
   {
+    id: "flatten-top-menu",
+    name: "Flatten Top Menu",
+    description:
+      "Lift the links hidden behind the header's hover dropdowns (Apps, Shop floor, …) into the header bar itself, and stop the dropdowns from opening. The menu contents are read from your own instance — nothing is hardcoded — so you get exactly the sections your license and permissions expose. Most instances won't open their menus for anything but a real cursor, so the first time you use this, hover each dropdown once and the bar flattens and stays that way. A parent link is dropped when a menu item already points at the same page (Shop floor → Stations), status flags like “New” and “Upgrade” are stripped off the labels, and the current section stays highlighted.",
+    defaultEnabled: false,
+    major: true,
+  },
+  {
     id: "dev-tools",
     name: "Dev Tools (Agent Debugging)",
     description:

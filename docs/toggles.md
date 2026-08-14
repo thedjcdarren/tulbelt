@@ -68,6 +68,111 @@ In the app editor canvas widget context menu (Delete / Move To Front / Back),
 adds Copy (Ctrl+C) and Cut (Ctrl+X) rows that synthesize those keyboard
 shortcuts when clicked.
 
+### Flatten top menu — `flatten-top-menu` · **default: off**
+
+Lifts the links Tulip hides inside the header's hover dropdowns
+(`[data-testid="tulip-header"] a[aria-haspopup="menu"]` — Apps, Shop floor, …)
+into the header bar itself and stops the dropdowns opening. On the stock header
+that turns Dashboards · Apps · Automations · Shop floor into Dashboards · Apps ·
+Tables · Connectors · Functions · Automations · Stations · Interfaces ·
+Machines · Edge Devices · Vision — but nothing in that list is hardcoded.
+Menu contents vary with the tenant's license and the signed-in user's
+permissions, so they're **read off the live header** and cached in
+`chrome.storage.local` under `flatNavMenus` (keyed by host + workspace, 7-day
+TTL). There are two routes in, because one of them doesn't work everywhere:
+
+1. **A MutationObserver on each trigger's own popper**, armed within milliseconds
+   of the header appearing and before anything slow runs. It reads a menu the
+   moment Tulip fills it in, whoever opened it — including the user's own cursor.
+   No synthetic events, no interference.
+2. **A probe** that asks each dropdown to open, trying four routes (hover on the
+   anchor, hover on its parent, a document-level pointer move, and focus +
+   ArrowDown — `aria-haspopup="menu"` implies a keyboard route, which has nothing
+   to do with pointer trust). Nothing here navigates, and the keyboard route
+   bails out rather than take focus off something the user is using. Whatever it
+   opens, the watcher above records.
+
+   The probe runs one pass **per strategy across every unread menu**, not one
+   pass per menu, so the whole header is probed in about the time a single menu
+   used to take — reads are scoped per popper, so concurrent menus can't
+   contaminate each other. Only the keyboard route is serialised, since focus can
+   only be in one place. Roughly 3s for a three-dropdown header that answers
+   nothing, against 8s when it went menu by menu.
+
+   It's also remembered per host, in `flatNavProbe`. An instance that answers
+   none of the routes is probed on its first three page loads and then left
+   alone — otherwise every cold page load pays several seconds for a question
+   already answered, with the keyboard route visibly ringing each link as it
+   goes. Three visits rather than one because the first load of an instance is
+   the worst moment to judge: React may still be wiring the header up. Adding a
+   new strategy means bumping `PROBE_VERSION`, or hosts that gave up on the old
+   ones would never be retried.
+
+The probe exists because it removes the need for the user to do anything, and it
+works on plenty of builds — but not on production Tulip, whose dropdowns ignore
+dispatched pointer events entirely, however faithfully shaped. (Verified against
+the real site with the toggle off: a real cursor opens every menu, a dispatched
+one opens none, `aria-expanded` and the popper's inline `display` unchanged.
+Likely an `isTrusted` or real-cursor-position check in whatever floating-element
+library the production header uses.) Where that's the case the watcher carries
+it, at a cost of one hover per menu, once, before the answer is cached.
+
+Order matters here and was got wrong once: the watcher used to be armed only
+*after* the probe gave up, so a hover made on a fresh page — the most likely
+moment for one — landed in the gap and was missed, which is what made this feel
+like it needed several tries. When the probe comes up empty, click-through
+routing is switched off at the same time, since it re-opens menus the same way
+and there's no point charging the user a timeout to discover that.
+
+Reads are scoped to the trigger's own sibling popper, never a document-wide
+sweep: a Tulip page carries ~18 poppers and a stray open one gets recorded
+against the wrong menu. A reading that saw more rows always wins over one that
+saw fewer, and reads settle for 250ms first, so a menu part-way through
+rendering never becomes the cached answer.
+
+Flattening is all-or-nothing: a menu that reads as empty never opened, so unless
+*every* dropdown is known the header is left exactly as Tulip drew it and nothing
+is cached. Flattening the readable menus around an unread one produces a
+half-done nav that reads as a bug — worse than not flattening at all. Set the
+developer-only `dev-tools` toggle to record what was read; entries are tagged
+`flatten-top-menu` in a `__tulbelt.copy()` report.
+
+A dropdown's parent link is kept only when its own destination isn't already one
+of its children, which is why "Shop floor" disappears (same page as its
+"Stations" child) while "Apps" survives. Duplicates against links already in the
+bar are dropped too.
+
+Status flags ("New", "Upgrade", "Beta", …) are stripped from the text a
+flattened link shows. Each harvested row carries two readings: `label` is plain
+`textContent`, and every decision about *whether* a link is flattened runs on it
+alone — dedupe, parent/child matching, and the "did this menu read?" test.
+`caption` is the stripped version and is only ever the text painted on screen.
+Keeping them apart is deliberate: stripping is cosmetic, and the one time it was
+wired into the matching path a single over-eager rule emptied every row's name
+and stopped whole headers flattening.
+
+The caption can't be taken from `textContent`, because a flag is a pill beside
+the name and the two come out glued — `<div>Vision</div><span>New</span>` reads
+as `VisionNew`. It's rebuilt from the individual text nodes instead, dropping
+parts that are a flag word on their own, with a final sweep for a trailing flag
+sharing its text node with the name ("Stations Beta"). That does mean a link
+genuinely called "… New" would lose the word, which is why the vocabulary is
+kept tight; every step falls back to the wider reading, so a row whose only text
+is a flag word keeps it. Extending the vocabulary means bumping `CACHE_VERSION`
+so harvested entries are re-read.
+
+Originals are hidden with an attribute + stylesheet rather than removed (React
+still owns them), and each flattened link is a plain `<a>` wearing the class and
+inline style copied off Tulip's own nav anchors — hashed styled-component names
+are read from the page, never hardcoded. Because a clone carries no React Router
+binding, a plain left click is routed through the real menu instead: the source
+menu is re-opened off-screen (the hidden original still answers synthetic
+events) and the matching real anchor is clicked, falling back to ordinary
+navigation — permanently, after the first timeout — if that doesn't work.
+Modified and middle clicks keep the browser's normal new-tab behavior. The
+section highlight is re-homed onto the flattened link whose path best matches
+the current URL, using the active/inactive looks read off the real anchors.
+
 ### Auto-snapshot every 15 active min — `auto-snapshot` · **default: off**
 
 In the app editor, tracks active editing time per app and automatically creates
