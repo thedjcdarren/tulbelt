@@ -83,36 +83,39 @@ read, and the result is cached in `chrome.storage.local` under `flatNavMenus`
 (keyed by host + workspace, 7-day TTL). The probe runs with every popper pinned
 `visibility: hidden`, so the menus never visibly flash open.
 
-Failure is per-menu, and always falls back to Tulip's own UI. A dropdown that
-doesn't answer the probe keeps its dropdown — replacing it with a plain link
-would quietly cost the user everything inside it — while the menus that did read
-still flatten. Only a fully readable header is cached, so a partial read retries
-on the next page load rather than freezing a half-flat nav for a week, and a
-header where nothing at all could be read is left completely untouched. Set the
-developer-only `dev-tools` toggle to record what the probe saw; the entries are
-tagged `flatten-top-menu` in a `__tulbelt.copy()` report.
+Harvesting is all-or-nothing: a menu that comes back empty means the probe
+failed, not that the menu is empty, so unless *every* dropdown reads the header
+is left exactly as Tulip drew it and nothing is cached. Flattening the readable
+menus around an unreadable one produces a half-done nav that reads as a bug —
+worse than not flattening at all. Because a failed attempt is invisible, it
+retries generously (four attempts, 3s apart) — the probe can lose a race against
+React still wiring up the header's hover handlers. Set the developer-only
+`dev-tools` toggle to record what the probe saw; entries are tagged
+`flatten-top-menu` in a `__tulbelt.copy()` report.
 
 A dropdown's parent link is kept only when its own destination isn't already one
 of its children, which is why "Shop floor" disappears (same page as its
 "Stations" child) while "Apps" survives. Duplicates against links already in the
 bar are dropped too.
 
-Status flags ("New", "Upgrade", "Beta", …) are stripped from the flattened
-labels. A flag is a pill sitting beside the name, so `textContent` would glue
-the two together — `<div>Vision</div><span>New</span>` reads as `VisionNew` —
-and the label is rebuilt from the individual text nodes instead, dropping any
-part that is a flag word on its own. A final sweep removes a trailing flag word
-that shares its text node with the name ("Stations Beta"), which does mean a
-link genuinely called "… New" would lose that word; the vocabulary is kept tight
-for that reason. Extending it means bumping `CACHE_VERSION` so harvested entries
-are re-read.
+Status flags ("New", "Upgrade", "Beta", …) are stripped from the text a
+flattened link shows. Each harvested row carries two readings: `label` is plain
+`textContent`, and every decision about *whether* a link is flattened runs on it
+alone — dedupe, parent/child matching, and the "did this menu read?" test.
+`caption` is the stripped version and is only ever the text painted on screen.
+Keeping them apart is deliberate: stripping is cosmetic, and the one time it was
+wired into the matching path a single over-eager rule emptied every row's name
+and stopped whole headers flattening.
 
-Every step of that falls back to the wider reading rather than the narrower one,
-so the label can never come out shorter than `textContent` would have been — a
-row whose only text is a flag word keeps it. That guarantee is load-bearing, not
-politeness: an empty label makes a menu row look unreadable, and an unreadable
-row used to take the entire header down with it. Stripping is a nicety and must
-never decide whether a link exists.
+The caption can't be taken from `textContent`, because a flag is a pill beside
+the name and the two come out glued — `<div>Vision</div><span>New</span>` reads
+as `VisionNew`. It's rebuilt from the individual text nodes instead, dropping
+parts that are a flag word on their own, with a final sweep for a trailing flag
+sharing its text node with the name ("Stations Beta"). That does mean a link
+genuinely called "… New" would lose the word, which is why the vocabulary is
+kept tight; every step falls back to the wider reading, so a row whose only text
+is a flag word keeps it. Extending the vocabulary means bumping `CACHE_VERSION`
+so harvested entries are re-read.
 
 Originals are hidden with an attribute + stylesheet rather than removed (React
 still owns them), and each flattened link is a plain `<a>` wearing the class and

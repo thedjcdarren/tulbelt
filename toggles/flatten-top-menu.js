@@ -29,7 +29,7 @@
   const CACHE_KEY = "flatNavMenus";
   const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
   // Bump whenever a change here would make previously harvested entries wrong.
-  const CACHE_VERSION = 2;
+  const CACHE_VERSION = 3;
 
   const HEADER_SELECTOR = '[data-testid="tulip-header"]';
   const MENU_ANCHOR_SELECTOR = 'a[aria-haspopup="menu"]';
@@ -45,7 +45,10 @@
   const MENU_OPEN_TIMEOUT_MS = 2000;
   const MENU_CLOSE_TIMEOUT_MS = 800;
   const CLICK_PROBE_TIMEOUT_MS = 700;
-  const MAX_HARVEST_ATTEMPTS = 2;
+  // A failed harvest leaves the header exactly as Tulip drew it, so retrying is
+  // invisible and worth doing generously — the probe can lose a race against
+  // React still wiring up the header's hover handlers.
+  const MAX_HARVEST_ATTEMPTS = 4;
   const HARVEST_RETRY_MS = 3000;
 
   const HIDE_CSS = `[${HIDDEN_ATTR}="true"] { display: none !important; }`;
@@ -90,18 +93,24 @@
   ]);
   const TRAILING_FLAG = new RegExp(`\\s+(?:${[...FLAG_WORDS].join("|")})$`, "i");
 
-  // A flag is a sibling element of the name, and textContent would glue the two
-  // straight together — <div>Vision</div><span>New</span> reads as "VisionNew".
-  // So the label is rebuilt from the individual text nodes and flag parts are
-  // dropped, with a trailing sweep for a flag sharing its text node with the
-  // name ("Vision New").
+  // What the element reads as, flags and all. Every decision about *whether* a
+  // link gets flattened runs on this and only this — dedupe, parent/child
+  // matching, and the "did this menu read?" test. Keeping it dumb is the point:
+  // the one time label extraction got clever enough to return an empty string,
+  // rows started looking unreadable and whole headers stopped flattening.
+  const labelOf = (el) => (el.textContent || "").replace(/\s+/g, " ").trim();
+
+  // The text a flattened link displays. Purely cosmetic, computed at harvest
+  // time alongside labelOf and consulted nowhere else, so however wrong it goes
+  // the worst case is a slightly-off caption — never a missing link.
   //
-  // Every step falls back to the wider reading rather than the narrower one, so
-  // this can never return less than textContent would have: an empty label makes
-  // a menu row look unreadable, and an unreadable row takes the whole header
-  // down with it. Stripping is a nicety; never let it decide whether a link
-  // exists.
-  function labelOf(el) {
+  // A flag is a sibling element of the name, so textContent glues the two
+  // together — <div>Vision</div><span>New</span> reads as "VisionNew" — and the
+  // caption is rebuilt from the individual text nodes instead, dropping parts
+  // that are a flag on their own. The trailing sweep catches a flag sharing its
+  // text node with the name ("Vision New"). Each step falls back to the wider
+  // reading, so this never comes out emptier than textContent.
+  function captionOf(el) {
     const parts = [];
     const walk = (node) => {
       for (const child of node.childNodes) {
@@ -115,12 +124,8 @@
     };
     walk(el);
     const named = parts.filter((part) => !FLAG_WORDS.has(part.toLowerCase()));
-    const label = (named.length ? named : parts).join(" ").replace(/\s+/g, " ").trim();
-    return (
-      label.replace(TRAILING_FLAG, "").trim() ||
-      label ||
-      (el.textContent || "").replace(/\s+/g, " ").trim()
-    );
+    const caption = (named.length ? named : parts).join(" ").replace(/\s+/g, " ").trim();
+    return caption.replace(TRAILING_FLAG, "").trim() || caption || labelOf(el);
   }
 
   function pathOf(href) {
@@ -248,9 +253,14 @@
   }
 
   function describe(anchor) {
+    const label = labelOf(anchor);
+    const caption = captionOf(anchor);
     return {
       href: anchor.getAttribute("href") || "",
-      label: labelOf(anchor),
+      label,
+      // Only carried when stripping actually changed something, so the common
+      // row stays a plain {href, label} pair in the cache and in signatures.
+      caption: caption === label ? "" : caption,
       target: anchor.getAttribute("target") || "",
     };
   }
@@ -289,12 +299,7 @@
         await closeMenu(anchor);
         const children = await readMenu(anchor);
         await closeMenu(anchor);
-        groups.push({
-          key: groupKeyOf(anchor),
-          href: anchor.getAttribute("href") || "",
-          label: labelOf(anchor),
-          children,
-        });
+        groups.push({ ...describe(anchor), key: groupKeyOf(anchor), children });
       }
     } finally {
       removeStyles(PROBE_STYLE_ID);
@@ -329,20 +334,14 @@
       if (harvestAttempts >= MAX_HARVEST_ATTEMPTS) return null;
       harvestAttempts += 1;
       const groups = await harvest(anchors);
-      const readable = groups.filter((group) => group.children.length).length;
-      trace("harvested", { key, groups, readable });
-      // A menu that came back empty means the probe failed, not that the menu is
-      // empty. One unreadable menu still flattens the rest — its own link is
-      // kept as-is, so nothing is lost — but a header where nothing at all could
-      // be read is left completely alone.
-      if (!readable) return null;
+      trace("harvested", { key, attempt: harvestAttempts, groups });
+      // All or nothing. A menu that came back empty means the probe failed, not
+      // that the menu is empty, and flattening the rest around it produces a
+      // half-done nav that reads as a bug. Better to leave the header exactly as
+      // Tulip drew it and try again on the next attempt.
+      if (!groups.length || groups.some((group) => !group.children.length)) return null;
       cache = { key, groups };
-      // Only a fully readable header is worth remembering: caching a partial
-      // read would freeze a half-flattened nav in place for a week, where
-      // retrying on the next page load costs nothing.
-      if (readable === groups.length) {
-        await writeCache(key, { v: CACHE_VERSION, at: Date.now(), groups });
-      }
+      await writeCache(key, { v: CACHE_VERSION, at: Date.now(), groups });
       return groups;
     } finally {
       harvesting = false;
@@ -393,7 +392,9 @@
     }
     anchor.className = inactiveTemplate?.className ?? "";
     if (inactiveTemplate?.style) anchor.setAttribute("style", inactiveTemplate.style);
-    anchor.textContent = item.label;
+    // The stripped caption is only ever the text on screen — item.label is what
+    // the rest of the pipeline matched on.
+    anchor.textContent = item.caption || item.label;
     anchor.addEventListener("click", onCloneClick);
     return anchor;
   }
@@ -411,7 +412,13 @@
       (child) => pathOf(child.href) === parentPath || child.label.toLowerCase() === parentLabel,
     );
     if (!parentCovered && group.href) {
-      items.push({ href: group.href, label: group.label, target: "", parent: true });
+      items.push({
+        href: group.href,
+        label: group.label,
+        caption: group.caption,
+        target: "",
+        parent: true,
+      });
     }
     for (const child of children) items.push({ ...child, parent: false });
 
@@ -432,17 +439,8 @@
   }
 
   function renderGroup(anchor, group, taken) {
-    // A menu that couldn't be read keeps its dropdown. Swapping it for a plain
-    // link would quietly cost the user everything that was inside it, which is
-    // a far worse outcome than one nav item still needing a hover.
-    if (!group.children?.length) {
-      removeClonesFor(group.key);
-      anchor.removeAttribute(HIDDEN_ATTR);
-      anchor.removeAttribute(RENDERED_ATTR);
-      return;
-    }
     const plan = planFor(group, taken);
-    const signature = JSON.stringify(plan.map((item) => [item.href, item.label]));
+    const signature = JSON.stringify(plan.map((item) => [item.href, item.label, item.caption]));
     // A React re-render can drop our clones while leaving the original (and its
     // signature attribute) in place, so the count is checked too — otherwise the
     // links would silently never come back.
