@@ -90,6 +90,19 @@ of its children, which is why "Shop floor" disappears (same page as its
 "Stations" child) while "Apps" survives. Duplicates against links already in the
 bar are dropped too.
 
+Status flags ("New", "Upgrade", "Beta", …) are stripped from the flattened
+labels. A flag is a pill sitting beside the name, so `textContent` would glue
+the two together — `<div>Vision</div><span>New</span>` reads as `VisionNew` —
+and the label is rebuilt from the individual text nodes instead. A text node is
+dropped when it's a flag word on its own, or when it sits inside an element
+whose `data-testid`/`aria-label`/`role` says badge/chip/pill/tag/label/status/flag
+(hashed class names are deliberately not consulted — a random hash containing
+"tag" would eat a real name). A final sweep removes a trailing flag word that
+shares its text node with the name ("Stations Beta"), which does mean a link
+genuinely called "… New" would lose that word; the flag vocabulary is kept
+tight for that reason, and a label is never stripped down to nothing. Extending
+the vocabulary means bumping `CACHE_VERSION` so harvested entries are re-read.
+
 Originals are hidden with an attribute + stylesheet rather than removed (React
 still owns them), and each flattened link is a plain `<a>` wearing the class and
 inline style copied off Tulip's own nav anchors — hashed styled-component names

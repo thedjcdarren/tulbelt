@@ -28,6 +28,8 @@
   const PROBE_STYLE_ID = "tulbelt-flatten-top-menu-probe-styles";
   const CACHE_KEY = "flatNavMenus";
   const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+  // Bump whenever a change here would make previously harvested entries wrong.
+  const CACHE_VERSION = 2;
 
   const HEADER_SELECTOR = '[data-testid="tulip-header"]';
   const MENU_ANCHOR_SELECTOR = 'a[aria-haspopup="menu"]';
@@ -65,7 +67,60 @@
 
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  const labelOf = (el) => (el.textContent || "").replace(/\s+/g, " ").trim();
+  // Status flags Tulip pins to a nav row — "Vision New", "Machines Upgrade".
+  // Extend this list rather than reaching for a cleverer heuristic: a flag is
+  // just a word, and guessing structurally risks eating a real link name.
+  const FLAG_WORDS = new Set([
+    "new",
+    "beta",
+    "alpha",
+    "preview",
+    "early access",
+    "upgrade",
+    "trial",
+    "add-on",
+    "addon",
+    "coming soon",
+    "deprecated",
+  ]);
+  // Marks the element wrapping a flag. Only attributes Tulip authors by hand are
+  // consulted — styled-component class hashes are random enough to contain
+  // "tag" by accident, which would silently eat a real label.
+  const FLAG_HINT = /badge|chip|pill|tag|label|status|flag/i;
+  const FLAG_HINT_ATTRS = ["data-testid", "aria-label", "role"];
+  const TRAILING_FLAG = new RegExp(`\\s+(?:${[...FLAG_WORDS].join("|")})$`, "i");
+
+  function inFlagElement(node, root) {
+    for (let el = node.parentElement; el && el !== root; el = el.parentElement) {
+      if (FLAG_HINT_ATTRS.some((name) => FLAG_HINT.test(el.getAttribute(name) || ""))) return true;
+    }
+    return false;
+  }
+
+  // A flag is a sibling element of the name, and textContent would glue the two
+  // straight together — <div>Vision</div><span>New</span> reads as "VisionNew".
+  // So the label is rebuilt from the individual text nodes, dropping any that
+  // are a flag on their own or that sit inside an element marked as one. The
+  // trailing sweep at the end catches a flag that shares its text node with the
+  // name ("Vision New"), and never empties a label down to nothing.
+  function labelOf(el) {
+    const parts = [];
+    const walk = (node) => {
+      for (const child of node.childNodes) {
+        if (child.nodeType === Node.TEXT_NODE) {
+          const text = child.data.replace(/\s+/g, " ").trim();
+          if (!text || FLAG_WORDS.has(text.toLowerCase())) continue;
+          if (inFlagElement(child, el)) continue;
+          parts.push(text);
+        } else if (child.nodeType === Node.ELEMENT_NODE) {
+          walk(child);
+        }
+      }
+    };
+    walk(el);
+    const label = parts.join(" ").replace(/\s+/g, " ").trim();
+    return label.replace(TRAILING_FLAG, "").trim() || label;
+  }
 
   function pathOf(href) {
     if (!href) return "";
@@ -261,7 +316,11 @@
     const key = cacheKeyFor(anchors);
     try {
       const stored = await readCache(key);
-      if (stored && Date.now() - stored.at < CACHE_TTL_MS && covers(stored.groups, anchors)) {
+      if (
+        stored?.v === CACHE_VERSION &&
+        Date.now() - stored.at < CACHE_TTL_MS &&
+        covers(stored.groups, anchors)
+      ) {
         cache = { key, groups: stored.groups };
         return cache.groups;
       }
@@ -272,7 +331,7 @@
       // is empty — don't cache it, and don't touch the nav on its account.
       if (!groups.length || groups.some((group) => !group.children.length)) return null;
       cache = { key, groups };
-      await writeCache(key, { at: Date.now(), groups });
+      await writeCache(key, { v: CACHE_VERSION, at: Date.now(), groups });
       return groups;
     } finally {
       harvesting = false;

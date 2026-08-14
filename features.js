@@ -221,7 +221,7 @@ export const FEATURES = [
     id: "flatten-top-menu",
     name: "Flatten Top Menu",
     description:
-      "Lift the links hidden behind the header's hover dropdowns (Apps, Shop floor, …) into the header bar itself, and stop the dropdowns from opening. The menu contents are read from your own instance the first time the header loads — nothing is hardcoded — so you get exactly the sections your license and permissions expose. A parent link is dropped when a menu item already points at the same page (Shop floor → Stations); the current section stays highlighted.",
+      "Lift the links hidden behind the header's hover dropdowns (Apps, Shop floor, …) into the header bar itself, and stop the dropdowns from opening. The menu contents are read from your own instance the first time the header loads — nothing is hardcoded — so you get exactly the sections your license and permissions expose. A parent link is dropped when a menu item already points at the same page (Shop floor → Stations), status flags like “New” and “Upgrade” are stripped off the labels, and the current section stays highlighted.",
     defaultEnabled: false,
     major: true,
   },
