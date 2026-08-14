@@ -77,20 +77,36 @@ that turns Dashboards · Apps · Automations · Shop floor into Dashboards · Ap
 Tables · Connectors · Functions · Automations · Stations · Interfaces ·
 Machines · Edge Devices · Vision — but nothing in that list is hardcoded.
 Menu contents vary with the tenant's license and the signed-in user's
-permissions, so they're **harvested from the live header**: a synthetic hover is
-fired at each dropdown anchor, the anchors Tulip renders into the popper are
-read, and the result is cached in `chrome.storage.local` under `flatNavMenus`
-(keyed by host + workspace, 7-day TTL). The probe runs with every popper pinned
-`visibility: hidden`, so the menus never visibly flash open.
+permissions, so they're **read off the live header** and cached in
+`chrome.storage.local` under `flatNavMenus` (keyed by host + workspace, 7-day
+TTL). There are two routes in, because one of them doesn't work everywhere:
 
-Harvesting is all-or-nothing: a menu that comes back empty means the probe
-failed, not that the menu is empty, so unless *every* dropdown reads the header
-is left exactly as Tulip drew it and nothing is cached. Flattening the readable
-menus around an unreadable one produces a half-done nav that reads as a bug —
-worse than not flattening at all. Because a failed attempt is invisible, it
-retries generously (four attempts, 3s apart) — the probe can lose a race against
-React still wiring up the header's hover handlers. Set the developer-only
-`dev-tools` toggle to record what the probe saw; entries are tagged
+1. **A synthetic hover** on each dropdown anchor, tried once per page with every
+   popper pinned `visibility: hidden` so nothing flashes open. This works on some
+   Tulip builds and on none of the others — the production header's dropdowns
+   ignore dispatched pointer/mouse events entirely, however faithfully shaped.
+   (Verified against the real site: a real cursor opens every menu, a dispatched
+   one opens none, with `aria-expanded` and the popper's inline `display`
+   unchanged. Likely an `isTrusted` or real-cursor-position check in whatever
+   floating-element library the production header uses.)
+2. **A MutationObserver on each trigger's own popper**, which reads the menu when
+   the *user's* cursor opens it. No synthetic events, no interference; it costs
+   one hover per menu, once, and then it's cached. When the synthetic route
+   comes up empty, click-through routing is switched off at the same time — it
+   re-opens menus the same way, so there's no point making the user wait for a
+   timeout to find that out.
+
+Reads are scoped to the trigger's own sibling popper, never a document-wide
+sweep: a Tulip page carries ~18 poppers and a stray open one gets recorded
+against the wrong menu. A reading that saw more rows always wins over one that
+saw fewer, and reads settle for 250ms first, so a menu part-way through
+rendering never becomes the cached answer.
+
+Flattening is all-or-nothing: a menu that reads as empty never opened, so unless
+*every* dropdown is known the header is left exactly as Tulip drew it and nothing
+is cached. Flattening the readable menus around an unread one produces a
+half-done nav that reads as a bug — worse than not flattening at all. Set the
+developer-only `dev-tools` toggle to record what was read; entries are tagged
 `flatten-top-menu` in a `__tulbelt.copy()` report.
 
 A dropdown's parent link is kept only when its own destination isn't already one

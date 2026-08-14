@@ -4,12 +4,23 @@
 //
 // Which links live in those menus isn't fixed — it varies with the tenant's
 // license and the signed-in user's permissions — so the list can't be
-// hardcoded. It's harvested once per workspace instead: synthesize a hover on
-// each `a[aria-haspopup="menu"]` in the header, read the anchors Tulip renders
-// into the popper, then cache the result in chrome.storage. The whole probe
-// runs with poppers pinned `visibility: hidden`, so the menus never visibly
-// flash open. If the probe comes back empty the nav is left completely alone —
-// a header we can't read is a header we must not dismantle.
+// hardcoded. It's read off the live header once per workspace and cached in
+// chrome.storage, by two routes:
+//
+//   1. A synthetic hover on each `a[aria-haspopup="menu"]`, run once per page
+//      with poppers pinned `visibility: hidden` so nothing flashes open. This
+//      works on some Tulip builds and on none of the others: the production
+//      header's dropdowns ignore dispatched pointer/mouse events entirely, no
+//      matter how faithfully shaped (verified against the real site — a real
+//      cursor opens every menu, a dispatched one opens none).
+//   2. Failing that, a MutationObserver on each trigger's own popper, which
+//      reads the menu when the *user's* cursor opens it. Costs one hover per
+//      menu, once, and then it's cached.
+//
+// Reads are scoped to the trigger's own sibling popper, never a document-wide
+// sweep: a Tulip page carries ~18 poppers and a stray open one gets recorded
+// against the wrong menu. Flattening is all-or-nothing — a menu that reads as
+// empty never opened, and flattening around it leaves a half-done nav.
 //
 // The originals are hidden with an attribute + stylesheet rather than removed
 // (React still owns them), and each flattened link is a *clone* of a plain nav
@@ -42,14 +53,14 @@
   const PARENT_ATTR = "data-tulbelt-flat-nav-parent";
 
   const POLL_MS = 50;
-  const MENU_OPEN_TIMEOUT_MS = 2000;
+  const MENU_OPEN_TIMEOUT_MS = 1500;
   const MENU_CLOSE_TIMEOUT_MS = 800;
+  const MENU_SETTLE_MS = 250;
   const CLICK_PROBE_TIMEOUT_MS = 700;
-  // A failed harvest leaves the header exactly as Tulip drew it, so retrying is
-  // invisible and worth doing generously — the probe can lose a race against
-  // React still wiring up the header's hover handlers.
-  const MAX_HARVEST_ATTEMPTS = 4;
-  const HARVEST_RETRY_MS = 3000;
+  // Only used when a trigger has no popper to watch, so the probe is the only
+  // way in and is worth retrying against a header React hasn't finished wiring.
+  const MAX_PROBE_ATTEMPTS = 3;
+  const PROBE_RETRY_MS = 3000;
 
   const HIDE_CSS = `[${HIDDEN_ATTR}="true"] { display: none !important; }`;
   const PROBE_CSS = `${POPPER_SELECTOR} { visibility: hidden !important; pointer-events: none !important; }`;
@@ -57,7 +68,8 @@
   let enabled = false;
   let cache = null; // { key, groups }
   let harvesting = false;
-  let harvestAttempts = 0;
+  let probed = false;
+  let probeAttempts = 0;
   let lastCacheKey = "";
   // Set once a lookup comes back empty so apply() stops hitting storage on
   // every mutation batch; a timer lifts it for the next attempt.
@@ -237,9 +249,30 @@
     );
   }
 
-  // Anchors inside a popper that currently has layout boxes. A closed popper is
+  // The dropdown Tulip renders for a trigger is its own following sibling, and
+  // scoping reads to it matters: a Tulip page carries ~18 poppers, so a document
+  // -wide sweep can pick up an unrelated one that happens to be open and record
+  // its links against the wrong menu.
+  function popperFor(anchor) {
+    for (let el = anchor.nextElementSibling; el; el = el.nextElementSibling) {
+      if (el.matches?.(POPPER_SELECTOR)) return el;
+      if (el.matches?.(MENU_ANCHOR_SELECTOR)) break; // reached the next trigger
+    }
+    return null;
+  }
+
+  // Menu rows inside a popper that currently has layout boxes. A closed popper is
   // `display: none` and so has none, which holds even while the probe stylesheet
   // pins the open one to `visibility: hidden`.
+  function popperRows(popper) {
+    if (!popper?.getClientRects().length) return [];
+    return [...popper.querySelectorAll("a[href]")]
+      .filter((row) => !row.hasAttribute(CLONE_ATTR))
+      .map(describe)
+      .filter((row) => row.href && row.label);
+  }
+
+  // Fallback for a build that portals its open menu somewhere else entirely.
   function openMenuAnchors() {
     const anchors = [];
     for (const popper of document.querySelectorAll(POPPER_SELECTOR)) {
@@ -265,49 +298,127 @@
     };
   }
 
+  const rowsFor = (anchor) => {
+    const own = popperRows(popperFor(anchor));
+    if (own.length) return own;
+    // No sibling popper: this build portals the open menu elsewhere.
+    return popperFor(anchor)
+      ? []
+      : openMenuAnchors()
+          .map(describe)
+          .filter((row) => row.href && row.label);
+  };
+
   // Opens `anchor`'s menu and returns its links. Waits for two consecutive
-  // identical non-empty reads so a half-rendered menu is never cached.
+  // identical non-empty reads so a half-rendered menu is never recorded.
   async function readMenu(anchor) {
     hoverIn(anchor);
     let previous = "";
     for (let waited = 0; waited < MENU_OPEN_TIMEOUT_MS; waited += POLL_MS) {
       await delay(POLL_MS);
-      const items = openMenuAnchors()
-        .map(describe)
-        .filter((item) => item.href && item.label);
+      const items = rowsFor(anchor);
       const signature = JSON.stringify(items);
       if (items.length && signature === previous) return items;
       previous = signature;
     }
-    trace("menu never settled", { anchor: groupKeyOf(anchor), lastRead: previous });
     return [];
   }
 
   async function closeMenu(anchor) {
     hoverOut(anchor);
     for (let waited = 0; waited < MENU_CLOSE_TIMEOUT_MS; waited += POLL_MS) {
-      if (!openMenuAnchors().length) return;
+      if (!rowsFor(anchor).length) return;
       await delay(POLL_MS);
     }
   }
 
-  async function harvest(anchors) {
+  // Synthetic hover works on some Tulip builds and on none of the others: the
+  // production header's dropdowns don't respond to dispatched pointer/mouse
+  // events at all, no matter how faithfully shaped. So it's tried exactly once
+  // per page, cheaply, and whatever it can't get is left to the watcher below.
+  async function probe(anchors) {
     ensureStyles(PROBE_STYLE_ID, PROBE_CSS);
-    const groups = [];
     try {
       for (const anchor of anchors) {
         await closeMenu(anchor);
         const children = await readMenu(anchor);
         await closeMenu(anchor);
-        groups.push({ ...describe(anchor), key: groupKeyOf(anchor), children });
+        if (children.length) remember(anchor, children);
       }
     } finally {
       removeStyles(PROBE_STYLE_ID);
     }
-    return groups;
   }
 
   /* ------------------------------------------------------------ menu sources */
+
+  // Menus recorded so far this page, by group key. Filled by the probe when that
+  // works and by the watcher when it doesn't; a header is only flattened once
+  // every trigger has an entry.
+  const captured = new Map();
+  const watchers = [];
+  let settleTimer = null;
+
+  function remember(anchor, children) {
+    const key = groupKeyOf(anchor);
+    // Menus render progressively, so a later read that saw more rows wins. Never
+    // downgrade — that's how a menu ends up flattened to a single stray link.
+    if ((captured.get(key)?.children.length ?? 0) >= children.length) return false;
+    captured.set(key, { ...describe(anchor), key, children });
+    trace("recorded menu", { key, count: children.length });
+    return true;
+  }
+
+  const assemble = (anchors) =>
+    anchors.every((anchor) => captured.has(groupKeyOf(anchor)))
+      ? anchors.map((anchor) => captured.get(groupKeyOf(anchor)))
+      : null;
+
+  function stopWatching() {
+    clearTimeout(settleTimer);
+    settleTimer = null;
+    for (const observer of watchers) observer.disconnect();
+    watchers.length = 0;
+  }
+
+  // When dispatched events can't open the menus, the user's own cursor still
+  // can. Watch each trigger's popper and read it the moment Tulip fills it in —
+  // no synthetic events, no interference, and it costs the user one hover per
+  // menu, once, before the answer is cached.
+  function watchForRealHovers(anchors, key) {
+    stopWatching();
+    for (const anchor of anchors) {
+      const popper = popperFor(anchor);
+      if (!popper) continue;
+      const observer = new MutationObserver(() => {
+        // Menus arrive in pieces; settle before reading so the first frame of a
+        // half-built list isn't what gets recorded.
+        clearTimeout(settleTimer);
+        settleTimer = setTimeout(() => {
+          const rows = popperRows(popper);
+          if (!rows.length || !remember(anchor, rows)) return;
+          const groups = assemble(anchors);
+          if (groups) void adopt(key, groups);
+        }, MENU_SETTLE_MS);
+      });
+      observer.observe(popper, {
+        attributes: true,
+        attributeFilter: ["style", "class"],
+        childList: true,
+        subtree: true,
+      });
+      watchers.push(observer);
+    }
+    trace("watching for real hovers", { menus: watchers.length });
+  }
+
+  async function adopt(key, groups) {
+    stopWatching();
+    cache = { key, groups };
+    blocked = false;
+    await writeCache(key, { v: CACHE_VERSION, at: Date.now(), groups });
+    apply();
+  }
 
   const covers = (groups, anchors) =>
     anchors.every((anchor) => groups.some((group) => group.key === groupKeyOf(anchor)));
@@ -331,15 +442,23 @@
         cache = { key, groups: stored.groups };
         return cache.groups;
       }
-      if (harvestAttempts >= MAX_HARVEST_ATTEMPTS) return null;
-      harvestAttempts += 1;
-      const groups = await harvest(anchors);
-      trace("harvested", { key, attempt: harvestAttempts, groups });
-      // All or nothing. A menu that came back empty means the probe failed, not
-      // that the menu is empty, and flattening the rest around it produces a
-      // half-done nav that reads as a bug. Better to leave the header exactly as
-      // Tulip drew it and try again on the next attempt.
-      if (!groups.length || groups.some((group) => !group.children.length)) return null;
+      if (!probed) {
+        probed = true;
+        await probe(anchors);
+        // Nothing came back, so this build ignores dispatched events. Routing a
+        // clone's click through its real menu works the same way, so don't make
+        // the user pay a timeout to discover that on their first click.
+        if (!captured.size) routeThroughMenus = false;
+        trace("probe finished", { key, recorded: captured.size, of: anchors.length });
+      }
+      // All or nothing: a menu that read as empty means it never opened, not
+      // that it's empty, and flattening the rest around it leaves a half-done
+      // nav that reads as a bug.
+      const groups = assemble(anchors);
+      if (!groups) {
+        watchForRealHovers(anchors, key);
+        return null;
+      }
       cache = { key, groups };
       await writeCache(key, { v: CACHE_VERSION, at: Date.now(), groups });
       return groups;
@@ -561,8 +680,11 @@
     const key = cacheKeyFor(anchors);
     if (key !== lastCacheKey) {
       lastCacheKey = key;
-      harvestAttempts = 0;
+      probed = false;
+      probeAttempts = 0;
       blocked = false;
+      captured.clear();
+      stopWatching();
     }
 
     captureTemplates(header);
@@ -572,11 +694,16 @@
       void loadGroups(anchors).then((loaded) => {
         if (loaded) return apply();
         blocked = true;
-        if (harvestAttempts < MAX_HARVEST_ATTEMPTS) {
+        // A watcher on every trigger is the whole retry mechanism — the next
+        // real hover wakes this back up. Only re-probe when there was nothing
+        // to watch, and even then only a few times.
+        if (!watchers.length && probeAttempts < MAX_PROBE_ATTEMPTS) {
+          probeAttempts += 1;
           setTimeout(() => {
+            probed = false;
             blocked = false;
             apply();
-          }, HARVEST_RETRY_MS);
+          }, PROBE_RETRY_MS);
         }
       });
       return;
@@ -619,9 +746,11 @@
   registerToggle(FEATURE_ID, {
     onEnable() {
       enabled = true;
-      harvestAttempts = 0;
+      probed = false;
+      probeAttempts = 0;
       lastCacheKey = "";
       blocked = false;
+      captured.clear();
       ensureStyles(STYLE_ID, HIDE_CSS);
       apply();
       observer.observe(document.body, { childList: true, subtree: true });
@@ -630,6 +759,7 @@
     onDisable() {
       enabled = false;
       observer.disconnect();
+      stopWatching();
       window.removeEventListener("popstate", apply);
       revert();
     },
