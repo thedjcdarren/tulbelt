@@ -7,15 +7,18 @@
 // hardcoded. It's read off the live header once per workspace and cached in
 // chrome.storage, by two routes:
 //
-//   1. A synthetic hover on each `a[aria-haspopup="menu"]`, run once per page
-//      with poppers pinned `visibility: hidden` so nothing flashes open. This
-//      works on some Tulip builds and on none of the others: the production
-//      header's dropdowns ignore dispatched pointer/mouse events entirely, no
-//      matter how faithfully shaped (verified against the real site — a real
-//      cursor opens every menu, a dispatched one opens none).
-//   2. Failing that, a MutationObserver on each trigger's own popper, which
-//      reads the menu when the *user's* cursor opens it. Costs one hover per
-//      menu, once, and then it's cached.
+//   1. A MutationObserver on each trigger's own popper, armed before anything
+//      slow runs, which reads a menu the moment Tulip fills it in — including
+//      when the *user's* own cursor opens it.
+//   2. A probe that asks the menus to open: hover, hover on the parent, a
+//      document-level pointer move, then focus + ArrowDown. It runs one pass per
+//      strategy across every unread menu rather than one pass per menu, with
+//      poppers pinned `visibility: hidden` so nothing flashes open. This works
+//      on some Tulip builds and on none of the others: the production header's
+//      dropdowns ignore dispatched pointer events entirely, however faithfully
+//      shaped (verified against the real site — a real cursor opens every menu,
+//      a dispatched one opens none). A host that answers nothing is remembered
+//      as such and stops being probed, so the cost isn't paid on every load.
 //
 // Reads are scoped to the trigger's own sibling popper, never a document-wide
 // sweep: a Tulip page carries ~18 poppers and a stray open one gets recorded
@@ -38,6 +41,10 @@
   const STYLE_ID = "tulbelt-flatten-top-menu-styles";
   const PROBE_STYLE_ID = "tulbelt-flatten-top-menu-probe-styles";
   const CACHE_KEY = "flatNavMenus";
+  const PROBE_KEY = "flatNavProbe";
+  // Bump to re-probe every instance — do it whenever a new open strategy is
+  // added, or hosts that answered none of the old ones would never be retried.
+  const PROBE_VERSION = 1;
   const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
   // Bump whenever a change here would make previously harvested entries wrong.
   const CACHE_VERSION = 3;
@@ -63,6 +70,8 @@
   // way in and is worth retrying against a header React hasn't finished wiring.
   const MAX_PROBE_ATTEMPTS = 3;
   const PROBE_RETRY_MS = 3000;
+  // Page loads on a fresh instance that will try probing before giving up on it.
+  const MAX_PROBE_VISITS = 3;
 
   const HIDE_CSS = `[${HIDDEN_ATTR}="true"] { display: none !important; }`;
   const PROBE_CSS = `${POPPER_SELECTOR} { visibility: hidden !important; pointer-events: none !important; }`;
@@ -79,6 +88,9 @@
   // Flipped to false the first time the click-through probe times out, so a
   // Tulip build we can't drive costs one slow click, not one per click.
   let routeThroughMenus = true;
+  // The trigger this took focus from <body> for, so the keyboard route can tell
+  // its own focus from focus the user placed somewhere.
+  let focusTaken = null;
   let activeTemplate = null;
   let inactiveTemplate = null;
 
@@ -183,6 +195,30 @@
   async function writeCache(key, entry) {
     const { [CACHE_KEY]: all = {} } = await chrome.storage.local.get(CACHE_KEY);
     await chrome.storage.local.set({ [CACHE_KEY]: { ...all, [key]: entry } });
+  }
+
+  // Whether asking this instance to open its own menus has ever worked. On a
+  // host that answers nothing, probing is several seconds of pointless work on
+  // every single page load — and the keyboard route puts a visible focus ring on
+  // each link as it goes. Learn the answer once and stop.
+  // A few failures rather than one, because the first page load on an instance
+  // is the worst moment to judge: React may still be wiring the header up. One
+  // unlucky visit must not switch probing off for a host forever.
+  async function probeAllowed(host) {
+    const { [PROBE_KEY]: all = {} } = await chrome.storage.local.get(PROBE_KEY);
+    const known = all[host];
+    if (!known || known.v !== PROBE_VERSION) return true;
+    return known.worked === true || (known.fails ?? 0) < MAX_PROBE_VISITS;
+  }
+
+  async function recordProbe(host, worked) {
+    const { [PROBE_KEY]: all = {} } = await chrome.storage.local.get(PROBE_KEY);
+    const known = all[host]?.v === PROBE_VERSION ? all[host] : null;
+    if (known?.worked === worked && worked) return;
+    const entry = worked
+      ? { worked: true, fails: 0, v: PROBE_VERSION }
+      : { worked: false, fails: (known?.fails ?? 0) + 1, v: PROBE_VERSION };
+    await chrome.storage.local.set({ [PROBE_KEY]: { ...all, [host]: entry } });
   }
 
   /* ---------------------------------------------------------------- hovering */
@@ -330,7 +366,15 @@
   // something the user is actually using.
   function openWithKeyboard(anchor) {
     const focused = document.activeElement;
-    if (focused && focused !== document.body && focused !== document.documentElement) return false;
+    // `focusTaken` matters: having focused the first trigger, focus is no longer
+    // on <body>, and without this every menu after the first was skipped.
+    const idle =
+      !focused ||
+      focused === document.body ||
+      focused === document.documentElement ||
+      focused === focusTaken;
+    if (!idle) return false;
+    focusTaken = anchor;
     anchor.focus({ preventScroll: true });
     for (const type of ["keydown", "keyup"]) {
       anchor.dispatchEvent(
@@ -364,48 +408,103 @@
     { name: "pointer-move", open: movePointerOver, close: hoverOut },
     {
       name: "keyboard",
+      serial: true,
+      // Either the menu is keyboard-openable or it isn't; there's no hover-intent
+      // delay to wait out, so this needs far less patience than the pointer routes.
+      budgetMs: 400,
       open: openWithKeyboard,
       close: (a) => {
-        a.blur();
+        if (focusTaken === a) {
+          a.blur();
+          focusTaken = null;
+        }
         hoverOut(a);
       },
     },
   ];
 
-  // Waits for two consecutive identical non-empty reads so a half-rendered menu
-  // is never recorded.
-  async function settleMenu(anchor) {
-    let previous = "";
-    for (let waited = 0; waited < MENU_OPEN_TIMEOUT_MS; waited += POLL_MS) {
+  // Watches several menus at once, recording each as it settles — two identical
+  // non-empty reads in a row, so a half-rendered menu is never recorded. Menus
+  // are read from their own poppers, so probing them concurrently costs nothing
+  // and turns the probe from per-menu into per-strategy.
+  async function settleAll(anchors, budgetMs, via) {
+    const previous = new Map();
+    const done = new Set();
+    for (let waited = 0; waited < budgetMs; waited += POLL_MS) {
       await delay(POLL_MS);
-      const items = rowsFor(anchor);
-      const signature = JSON.stringify(items);
-      if (items.length && signature === previous) return items;
-      previous = signature;
+      for (const anchor of anchors) {
+        if (done.has(anchor)) continue;
+        const items = rowsFor(anchor);
+        const signature = JSON.stringify(items);
+        if (items.length && signature === previous.get(anchor)) {
+          done.add(anchor);
+          remember(anchor, items);
+          trace("menu opened", { key: groupKeyOf(anchor), via });
+          continue;
+        }
+        previous.set(anchor, signature);
+      }
+      if (done.size === anchors.length) return;
     }
-    return [];
   }
 
+  // One pass per strategy across every unread menu, rather than one pass per
+  // menu — the whole header is probed in the time a single menu used to take.
   // Strategies stack rather than take turns: closing between them would cancel a
   // hover-intent timer that hadn't fired yet, so a header with a lazy delay
-  // would never open no matter how long the probe ran. Everything is undone
-  // together at the end.
-  async function readMenu(anchor) {
+  // would never open however long the probe ran. Everything is undone at the end.
+  async function sweepTogether(anchors) {
+    const opened = new Map(anchors.map((anchor) => [anchor, []]));
+    try {
+      for (const strategy of OPEN_STRATEGIES) {
+        const waiting = anchors.filter((anchor) => !captured.has(groupKeyOf(anchor)));
+        if (!waiting.length) return;
+        const budget = strategy.budgetMs ?? MENU_OPEN_TIMEOUT_MS;
+        if (strategy.serial) {
+          // Focus can only be in one place, so this one can't be batched.
+          for (const anchor of waiting) {
+            if (!strategy.open(anchor)) continue;
+            opened.get(anchor).push(strategy);
+            await settleAll([anchor], budget, strategy.name);
+          }
+          continue;
+        }
+        const started = waiting.filter((anchor) => strategy.open(anchor));
+        for (const anchor of started) opened.get(anchor).push(strategy);
+        if (started.length) await settleAll(started, budget, strategy.name);
+      }
+    } finally {
+      for (const [anchor, used] of opened) {
+        for (const strategy of used.reverse()) strategy.close(anchor);
+      }
+      for (const anchor of anchors) await closeMenu(anchor);
+    }
+  }
+
+  // A trigger with no popper of its own can only be read by looking across the
+  // document, which is only sound while exactly one menu is open. So these get
+  // probed strictly alone — strategies still stack, but the next trigger doesn't
+  // start until this one is shut.
+  async function sweepAlone(anchor) {
     const opened = [];
     try {
       for (const strategy of OPEN_STRATEGIES) {
+        if (captured.has(groupKeyOf(anchor))) return;
         if (!strategy.open(anchor)) continue;
         opened.push(strategy);
-        const items = await settleMenu(anchor);
-        if (items.length) {
-          trace("menu opened", { key: groupKeyOf(anchor), via: strategy.name });
-          return items;
-        }
+        await settleAll([anchor], strategy.budgetMs ?? MENU_OPEN_TIMEOUT_MS, strategy.name);
       }
-      return [];
     } finally {
       for (const strategy of opened.reverse()) strategy.close(anchor);
       await closeMenu(anchor);
+    }
+  }
+
+  async function sweep(anchors) {
+    const scoped = anchors.filter((anchor) => popperFor(anchor));
+    if (scoped.length) await sweepTogether(scoped);
+    for (const anchor of anchors) {
+      if (!popperFor(anchor)) await sweepAlone(anchor);
     }
   }
 
@@ -424,12 +523,7 @@
   async function probe(anchors) {
     ensureStyles(PROBE_STYLE_ID, PROBE_CSS);
     try {
-      for (const anchor of anchors) {
-        await closeMenu(anchor);
-        const children = await readMenu(anchor);
-        await closeMenu(anchor);
-        if (children.length) remember(anchor, children);
-      }
+      await sweep(anchors);
     } finally {
       removeStyles(PROBE_STYLE_ID);
     }
@@ -533,12 +627,18 @@
       watchForRealHovers(anchors, key);
       if (!probed) {
         probed = true;
-        await probe(anchors);
-        // Nothing came back, so this build ignores dispatched events. Routing a
-        // clone's click through its real menu works the same way, so don't make
-        // the user pay a timeout to discover that on their first click.
-        if (!captured.size) routeThroughMenus = false;
-        trace("probe finished", { key, recorded: captured.size, of: anchors.length });
+        // Clicking a clone routes through its real menu the same way probing
+        // does, so a host that can't be probed can't be routed either — decided
+        // up front rather than charging the user a timeout on their first click.
+        const allowed = await probeAllowed(location.host);
+        if (!allowed) routeThroughMenus = false;
+        if (allowed) {
+          await probe(anchors);
+          const worked = captured.size > 0;
+          if (!worked) routeThroughMenus = false;
+          await recordProbe(location.host, worked);
+          trace("probe finished", { key, worked, recorded: captured.size, of: anchors.length });
+        }
       }
       // All or nothing: a menu that read as empty means it never opened, not
       // that it's empty, and flattening the rest around it leaves a half-done

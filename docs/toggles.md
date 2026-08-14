@@ -85,12 +85,28 @@ TTL). There are two routes in, because one of them doesn't work everywhere:
    of the header appearing and before anything slow runs. It reads a menu the
    moment Tulip fills it in, whoever opened it — including the user's own cursor.
    No synthetic events, no interference.
-2. **A probe** that asks each dropdown to open, trying four routes in turn
-   (hover on the anchor, hover on its parent, a document-level pointer move, and
-   focus + ArrowDown — `aria-haspopup="menu"` implies a keyboard route, which has
-   nothing to do with pointer trust). Nothing here navigates, and the keyboard
-   route bails out rather than take focus off something the user is using.
-   Whatever it opens, the watcher above records.
+2. **A probe** that asks each dropdown to open, trying four routes (hover on the
+   anchor, hover on its parent, a document-level pointer move, and focus +
+   ArrowDown — `aria-haspopup="menu"` implies a keyboard route, which has nothing
+   to do with pointer trust). Nothing here navigates, and the keyboard route
+   bails out rather than take focus off something the user is using. Whatever it
+   opens, the watcher above records.
+
+   The probe runs one pass **per strategy across every unread menu**, not one
+   pass per menu, so the whole header is probed in about the time a single menu
+   used to take — reads are scoped per popper, so concurrent menus can't
+   contaminate each other. Only the keyboard route is serialised, since focus can
+   only be in one place. Roughly 3s for a three-dropdown header that answers
+   nothing, against 8s when it went menu by menu.
+
+   It's also remembered per host, in `flatNavProbe`. An instance that answers
+   none of the routes is probed on its first three page loads and then left
+   alone — otherwise every cold page load pays several seconds for a question
+   already answered, with the keyboard route visibly ringing each link as it
+   goes. Three visits rather than one because the first load of an instance is
+   the worst moment to judge: React may still be wiring the header up. Adding a
+   new strategy means bumping `PROBE_VERSION`, or hosts that gave up on the old
+   ones would never be retried.
 
 The probe exists because it removes the need for the user to do anything, and it
 works on plenty of builds — but not on production Tulip, whose dropdowns ignore
