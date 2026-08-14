@@ -67,6 +67,11 @@
 
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+  // Routed through the dev-tools buffer (inert unless that toggle and developer
+  // mode are both on), so a header this can't read is diagnosable from a
+  // `__tulbelt.copy()` report instead of guesswork. See docs/devtools.md.
+  const trace = (...args) => window.__tulbelt?.log?.(FEATURE_ID, ...args);
+
   // Status flags Tulip pins to a nav row — "Vision New", "Machines Upgrade".
   // Extend this list rather than reaching for a cleverer heuristic: a flag is
   // just a word, and guessing structurally risks eating a real link name.
@@ -83,43 +88,39 @@
     "coming soon",
     "deprecated",
   ]);
-  // Marks the element wrapping a flag. Only attributes Tulip authors by hand are
-  // consulted — styled-component class hashes are random enough to contain
-  // "tag" by accident, which would silently eat a real label.
-  const FLAG_HINT = /badge|chip|pill|tag|label|status|flag/i;
-  const FLAG_HINT_ATTRS = ["data-testid", "aria-label", "role"];
   const TRAILING_FLAG = new RegExp(`\\s+(?:${[...FLAG_WORDS].join("|")})$`, "i");
-
-  function inFlagElement(node, root) {
-    for (let el = node.parentElement; el && el !== root; el = el.parentElement) {
-      if (FLAG_HINT_ATTRS.some((name) => FLAG_HINT.test(el.getAttribute(name) || ""))) return true;
-    }
-    return false;
-  }
 
   // A flag is a sibling element of the name, and textContent would glue the two
   // straight together — <div>Vision</div><span>New</span> reads as "VisionNew".
-  // So the label is rebuilt from the individual text nodes, dropping any that
-  // are a flag on their own or that sit inside an element marked as one. The
-  // trailing sweep at the end catches a flag that shares its text node with the
-  // name ("Vision New"), and never empties a label down to nothing.
+  // So the label is rebuilt from the individual text nodes and flag parts are
+  // dropped, with a trailing sweep for a flag sharing its text node with the
+  // name ("Vision New").
+  //
+  // Every step falls back to the wider reading rather than the narrower one, so
+  // this can never return less than textContent would have: an empty label makes
+  // a menu row look unreadable, and an unreadable row takes the whole header
+  // down with it. Stripping is a nicety; never let it decide whether a link
+  // exists.
   function labelOf(el) {
     const parts = [];
     const walk = (node) => {
       for (const child of node.childNodes) {
         if (child.nodeType === Node.TEXT_NODE) {
           const text = child.data.replace(/\s+/g, " ").trim();
-          if (!text || FLAG_WORDS.has(text.toLowerCase())) continue;
-          if (inFlagElement(child, el)) continue;
-          parts.push(text);
+          if (text) parts.push(text);
         } else if (child.nodeType === Node.ELEMENT_NODE) {
           walk(child);
         }
       }
     };
     walk(el);
-    const label = parts.join(" ").replace(/\s+/g, " ").trim();
-    return label.replace(TRAILING_FLAG, "").trim() || label;
+    const named = parts.filter((part) => !FLAG_WORDS.has(part.toLowerCase()));
+    const label = (named.length ? named : parts).join(" ").replace(/\s+/g, " ").trim();
+    return (
+      label.replace(TRAILING_FLAG, "").trim() ||
+      label ||
+      (el.textContent || "").replace(/\s+/g, " ").trim()
+    );
   }
 
   function pathOf(href) {
@@ -268,6 +269,7 @@
       if (items.length && signature === previous) return items;
       previous = signature;
     }
+    trace("menu never settled", { anchor: groupKeyOf(anchor), lastRead: previous });
     return [];
   }
 
@@ -327,11 +329,20 @@
       if (harvestAttempts >= MAX_HARVEST_ATTEMPTS) return null;
       harvestAttempts += 1;
       const groups = await harvest(anchors);
-      // A menu that came back empty means the probe failed, not that the menu
-      // is empty — don't cache it, and don't touch the nav on its account.
-      if (!groups.length || groups.some((group) => !group.children.length)) return null;
+      const readable = groups.filter((group) => group.children.length).length;
+      trace("harvested", { key, groups, readable });
+      // A menu that came back empty means the probe failed, not that the menu is
+      // empty. One unreadable menu still flattens the rest — its own link is
+      // kept as-is, so nothing is lost — but a header where nothing at all could
+      // be read is left completely alone.
+      if (!readable) return null;
       cache = { key, groups };
-      await writeCache(key, { v: CACHE_VERSION, at: Date.now(), groups });
+      // Only a fully readable header is worth remembering: caching a partial
+      // read would freeze a half-flattened nav in place for a week, where
+      // retrying on the next page load costs nothing.
+      if (readable === groups.length) {
+        await writeCache(key, { v: CACHE_VERSION, at: Date.now(), groups });
+      }
       return groups;
     } finally {
       harvesting = false;
@@ -421,6 +432,15 @@
   }
 
   function renderGroup(anchor, group, taken) {
+    // A menu that couldn't be read keeps its dropdown. Swapping it for a plain
+    // link would quietly cost the user everything that was inside it, which is
+    // a far worse outcome than one nav item still needing a hover.
+    if (!group.children?.length) {
+      removeClonesFor(group.key);
+      anchor.removeAttribute(HIDDEN_ATTR);
+      anchor.removeAttribute(RENDERED_ATTR);
+      return;
+    }
     const plan = planFor(group, taken);
     const signature = JSON.stringify(plan.map((item) => [item.href, item.label]));
     // A React re-render can drop our clones while leaving the original (and its
@@ -535,7 +555,10 @@
     const header = document.querySelector(HEADER_SELECTOR);
     if (!header) return;
     const anchors = [...header.querySelectorAll(MENU_ANCHOR_SELECTOR)];
-    if (!anchors.length) return;
+    if (!anchors.length) {
+      trace("header has no dropdown anchors", { headerHtmlLength: header.innerHTML.length });
+      return;
+    }
 
     const key = cacheKeyFor(anchors);
     if (key !== lastCacheKey) {
