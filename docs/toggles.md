@@ -68,6 +68,40 @@ In the app editor canvas widget context menu (Delete / Move To Front / Back),
 adds Copy (Ctrl+C) and Cut (Ctrl+X) rows that synthesize those keyboard
 shortcuts when clicked.
 
+### Flatten top menu — `flatten-top-menu` · **default: off**
+
+Lifts the links Tulip hides inside the header's hover dropdowns
+(`[data-testid="tulip-header"] a[aria-haspopup="menu"]` — Apps, Shop floor, …)
+into the header bar itself and stops the dropdowns opening. On the stock header
+that turns Dashboards · Apps · Automations · Shop floor into Dashboards · Apps ·
+Tables · Connectors · Functions · Automations · Stations · Interfaces ·
+Machines · Edge Devices · Vision — but nothing in that list is hardcoded.
+Menu contents vary with the tenant's license and the signed-in user's
+permissions, so they're **harvested from the live header**: a synthetic hover is
+fired at each dropdown anchor, the anchors Tulip renders into the popper are
+read, and the result is cached in `chrome.storage.local` under `flatNavMenus`
+(keyed by host + workspace, 7-day TTL). The probe runs with every popper pinned
+`visibility: hidden`, so the menus never visibly flash open, and a probe that
+comes back empty is neither cached nor acted on — a header that can't be read is
+left completely untouched.
+
+A dropdown's parent link is kept only when its own destination isn't already one
+of its children, which is why "Shop floor" disappears (same page as its
+"Stations" child) while "Apps" survives. Duplicates against links already in the
+bar are dropped too.
+
+Originals are hidden with an attribute + stylesheet rather than removed (React
+still owns them), and each flattened link is a plain `<a>` wearing the class and
+inline style copied off Tulip's own nav anchors — hashed styled-component names
+are read from the page, never hardcoded. Because a clone carries no React Router
+binding, a plain left click is routed through the real menu instead: the source
+menu is re-opened off-screen (the hidden original still answers synthetic
+events) and the matching real anchor is clicked, falling back to ordinary
+navigation — permanently, after the first timeout — if that doesn't work.
+Modified and middle clicks keep the browser's normal new-tab behavior. The
+section highlight is re-homed onto the flattened link whose path best matches
+the current URL, using the active/inactive looks read off the real anchors.
+
 ### Auto-snapshot every 15 active min — `auto-snapshot` · **default: off**
 
 In the app editor, tracks active editing time per app and automatically creates

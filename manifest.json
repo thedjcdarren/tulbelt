@@ -45,6 +45,7 @@
         "toggles/option-sets-builder.js",
         "toggles/option-sets-trigger.js",
         "toggles/trigger-value-full-text.js",
+        "toggles/flatten-top-menu.js",
         "toggles/dev-probe.js"
       ],
       "run_at": "document_idle"
