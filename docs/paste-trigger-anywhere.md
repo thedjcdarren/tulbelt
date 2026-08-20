@@ -5,9 +5,11 @@ owner Tulip currently refuses: a button trigger onto an interactive table, an
 "On step enter" trigger onto a button, a trigger from one custom widget type
 onto another.
 
-Status: **research + design.** The interception point is chosen but not yet
-confirmed against a live instance — see [Open questions](#open-questions) and
-the probe in [`probes/trigger-clipboard-probe.js`](./probes/trigger-clipboard-probe.js).
+Status: **research.** A probe run on a live instance (Tulip's app editor, app
+version editor page) settled how the copy/paste path works and where the guard
+sits — see [Confirmed by probe](#confirmed-by-probe). What is still missing is
+the payload's own shape; the remaining [open questions](#open-questions) all
+depend on it.
 
 ## What Tulip does today
 
@@ -60,45 +62,66 @@ any action that referenced the old owner — visible and unset for them to fix
 before saving. A trigger that pastes cleanly and one that pastes with a hole in
 it should both be better than retyping fifteen actions.
 
-## Where the guard can live
+## Confirmed by probe
 
-Three possibilities, and which one is true decides the whole implementation.
-The probe distinguishes them in a single copy/paste round.
+One session on a live instance, copying a trigger and pasting it onto both a
+compatible and an incompatible target:
 
-**H1 — the payload carries an owner discriminator, checked at paste.** Copy
-serializes the trigger (probably JSON) with something like an owner kind /
-widget type / event name; the Ctrl+V handler reads the clipboard, compares that
-against the current selection, and bails when they disagree. _Signature in the
-probe:_ a `clipboard.readText:resolved` (or a `paste` event with the payload)
-fires on the refused paste too, and nothing happens afterwards.
+**Copy goes to the real system clipboard**, via
+`navigator.clipboard.write()` — a `ClipboardItem`, not `writeText`. It fires
+from a click on the trigger row's copy button, inside the user gesture. So the
+payload is serialized and shared: this is why paste works across apps, and it
+is a payload Tulbelt can see and rewrite.
 
-**H2 — the copy never reaches a shared clipboard.** The trigger is held in an
-in-memory or `localStorage` clipboard keyed by owner type, and the paste
-handler only looks in the slot matching the current selection. _Signature:_ a
-`storage.setItem` on copy, or no clipboard traffic at all on copy, plus no read
-of the payload on the refused paste.
+**Paste is a trusted `paste` event**, not a clipboard read. At capture phase
+the event arrives with `defaultPrevented: false`; Tulip's own handler runs; by
+the time it bubbles back to `window` it is `defaultPrevented: true`. Tulip
+reads the payload out of `event.clipboardData` in between.
 
-**H3 — the guard is downstream of the editor.** The payload is accepted and the
-editor opens, but attaching on Save is rejected (client- or server-side).
-_Signature:_ the paste reads the payload and the editor opens, and the refusal
-only appears on Save.
+**The guard is client-side, between reading the payload and opening the
+editor.** Tulip's own clientLogger brackets the paste with two lines:
 
-H1 is the most likely (it matches the observed "nothing at all happens" and the
-documented cross-app paste, which requires a serialized payload), and it is the
-one Tulbelt can fix most cleanly. H3 would be the worst case: if the server
-validates the owner/event pair, a browser extension cannot honestly work around
-it, and the toggle should not ship.
+```
+[Copy/Paste]: Pasting trigger in app editor      { sourceAppId, targetAppId, … }
+[Copy/Paste]: Pasting trigger, opening trigger editor { oldAppVersionId, oldTriggerId, … }
+```
+
+Every paste in the run logged the first line — including the refused one, which
+proves the payload is read and parsed before the compatibility check. Only the
+refused paste never logged the second. Nothing was written to `localStorage`
+(the only writes were `tulip-last-activity` and feature-flag chatter), no
+`readText`/`read` call was made, and no warning or error was logged on refusal —
+it fails silently.
+
+So of the three shapes this could have taken, the first is what Tulip does:
+
+| Hypothesis                                                | Verdict                                                        |
+| --------------------------------------------------------- | -------------------------------------------------------------- |
+| **H1** payload carries an owner discriminator, checked at paste | **Confirmed** — payload read every time, guard right after |
+| **H2** copy never reaches a shared clipboard (in-memory / localStorage slot) | Ruled out — `clipboard.write()`, no storage writes |
+| **H3** guard is downstream, at Save                        | Not reached — the editor never opens, so the gate is upstream of it |
+
+H3 is not fully excluded as a _second_ gate: the editor opening does not prove
+Save will accept a cross-type trigger. That is the first thing to test once a
+rewrite works, and if the server refuses, the toggle should not ship.
 
 ## Interception layers available
 
 Ranked by preference, with the precedent already in this repo:
 
-1. **Rewrite the payload as Tulip reads it** (MAIN world). Wrap
-   `navigator.clipboard.readText`/`read`, or intercept the `paste` event in the
-   capture phase and re-dispatch a synthetic one carrying a patched
-   `DataTransfer`. Smallest surface: Tulip's own paste code path runs unchanged,
-   it just sees a payload that says the trigger belongs to the target. Nothing
-   persists, so disabling reverts by simply passing payloads through untouched.
+1. **Rewrite the payload as Tulip reads it** (MAIN world) — now that paste is
+   known to be a trusted `paste` event, the hook is
+   `DataTransfer.prototype.getData`. Wrap it; when Tulip's handler asks the
+   pasted `DataTransfer` for its payload during a paste in the app editor,
+   return a rewritten string instead. Tulip's own trusted event and its own
+   code path run unchanged — it simply reads a payload that says the trigger
+   belongs to the target. Nothing persists, so disabling reverts by passing
+   payloads straight through.
+
+   This is why the wrapper beats the two obvious alternatives: the event's
+   `clipboardData` is read-only, so it cannot be edited in place, and
+   re-dispatching a synthetic `ClipboardEvent` would hand Tulip an untrusted
+   event and a re-entrancy problem. Rewriting the getter sidesteps both.
 2. **React fibers** (MAIN world) — `filters-builder-main.js` and
    `expression-editor-fuzzy-main.js` show the pattern: find the owning component
    by climbing from a DOM node and call its props directly. This is the fallback
@@ -156,12 +179,12 @@ Two halves, following `filters-builder` / `app-list-date-columns`:
   `EDITOR_PATH` regex from `snap-to-grid.js`), and it sets/clears
   `<html data-tulbelt-pta-enabled>`.
 - `toggles/paste-trigger-anywhere-main.js` (MAIN world, `document_start` — the
-  wrapper must be installed before Tulip captures its own clipboard reference)
-  — wraps the clipboard read, and rewrites a payload only when **all** of:
-  the `<html>` flag is set, the payload parses, it looks like a Tulip trigger
-  (positively identified, not "is JSON"), and its owner differs from the current
-  paste target. Any other payload passes through byte-identical, so ordinary
-  copy/paste in the editor is untouched.
+  wrapper must be installed before Tulip's paste handler can run) — wraps
+  `DataTransfer.prototype.getData` and rewrites the returned payload only when
+  **all** of: the `<html>` flag is set, a paste is in flight, the payload parses,
+  it is positively identified as a Tulip trigger (not merely "is JSON"), and its
+  owner differs from the paste target. Every other read passes through
+  byte-identical, so pasting text into any field in the editor is untouched.
 
 Revert: clearing the flag makes the wrapper a pass-through on the very next
 read. The wrapper itself stays installed for the life of the page — Tulip may
@@ -190,22 +213,26 @@ half (see [devtools.md](./devtools.md)).
 
 ## Open questions
 
-The probe answers these in one session:
+Answered by the first probe run: the clipboard is the channel
+(`navigator.clipboard.write`), the read is a trusted `paste` event, the payload
+_is_ read on a refused paste, and refusal is silent. Still open, all of them
+about the payload itself:
 
-1. Does a trigger copy reach the **system clipboard**? (Copy a trigger, paste it
-   into a text editor — if JSON appears, H1 is confirmed on the spot.)
-2. Is the payload read via `navigator.clipboard.readText`, a `paste` event, or
-   neither?
-3. What is the payload's shape — which fields identify the owner, the widget
+1. Which MIME type does the `ClipboardItem` carry — `text/plain`, or a custom
+   type? (Decides what the `getData` wrapper matches on.)
+2. What is the payload's shape — which fields identify the owner, the widget
    type, and the event?
-4. Do step, app and widget triggers serialize as the same record with a
+3. Do step, app and widget triggers serialize as the same record with a
    different owner field, or as different records? (Strategy A vs B.)
-5. On a **refused** paste, is the payload read at all? (H1 vs H2/H3.)
-6. Is there a console warning or an error on refusal?
-7. Do two different custom widget types produce payloads that differ only by a
+4. Do two different custom widget types produce payloads that differ only by a
    widget-type id?
-8. How does the editor identify the current paste target in the DOM, so the
-   rewrite can name it? (Selected-widget testids captured on the Ctrl+V keydown.)
+5. Can the rewrite name the target? The paste target has to be identified from
+   the payload's own vocabulary — the probe's Ctrl+V capture found no
+   `.selected` widget node, so the DOM selector for "what is selected" still
+   needs finding, or the target has to be inferred another way (e.g. Tulip's
+   `[Copy/Paste]` log context, which already knows `targetAppId`).
+6. Does **Save** accept a cross-type trigger once the editor opens, or is there
+   a second gate server-side? (The one question that can end this feature.)
 
 ## Running the probe
 
@@ -225,8 +252,11 @@ The probe answers these in one session:
      and paste it onto a different one (refused).
 5. Also copy one trigger of each kind you care about (button, step, app, custom
    widget) so the report carries a reference payload for each.
-6. Run `copy(__tpaReport())` and paste the JSON into the chat. `__tpaStop()`
-   removes the probe; reloading the tab also clears it.
+6. Run `copy(__tpaDump())` and paste the JSON into the chat — that is the
+   copy/paste-relevant subset (payloads, `getData` reads, Tulip's own
+   `[Copy/Paste]` lines). `copy(__tpaReport())` gives everything including
+   clicks and storage writes, if the dump turns out to be missing something.
+   `__tpaStop()` removes the probe; reloading the tab also clears it.
 
 The report replaces the instance hostname with `your-instance.tulip.co`, but a
 tenant name appearing as plain text inside a captured payload is **not**
