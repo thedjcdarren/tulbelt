@@ -232,6 +232,63 @@ trigger editor that opens, so the button can seed a plausible default (or leave
 it empty) and let the user set it before saving — but it must be deliberate,
 not omitted by accident.
 
+### Inside Tulip's code
+
+A grep of the editor bundles for the clipboard strings landed on the module
+itself. Four things it settles:
+
+**The event taxonomy is formal, and it has four classes.** `TriggerEventTypes`
+is a real enum, and the code derives one codec per class from it:
+
+| Class      | Event types                                                                                                     |
+| ---------- | --------------------------------------------------------------------------------------------------------------- |
+| **Widget** | `button-press`, `custom-widget-event`, `input-change`, `input-exit`, `enter-press`, `row-select`, `signature-complete` (+ the form pair) |
+| **Step**   | `device-output`, `step-closed`, `step-open`, `interval`, `machine-output`                                         |
+| **App**    | `app-cancel`, `app-complete`, `app-start`                                                                         |
+| **Form**   | `form-submit`, `form-cancel`                                                                                      |
+
+That is the line the feature is trying to cross, and it is drawn in Tulip's own
+type definitions. It also explains component-to-component cleanly: every
+component event is in one class, so moving between them never leaves it.
+
+Two event types carry extra fields, and the codecs spell out exactly what:
+
+```
+custom-widget-event : { type, id, eventName, customWidgetId }
+device-output       : { type, id, args: { driver, event } | { machine? } }
+interval            : { type, id, args: { interval … } }
+everything else     : { type, id }
+```
+
+`machine-output` and the form events are types the harvest never saw — worth
+knowing they exist before writing a rewrite that assumes the list is closed.
+
+**The clipboard helpers are a tiny module.** One function serializes JSON to
+`<span data-tulip-clipboard="<base64>"></span>`, one parses it back out with
+`DOMParser`, one writes it to the clipboard. Copy builds
+`{ isTulipAppClipboardContent: true, triggers: [<id>] }` and expands it into the
+full payload we decoded.
+
+**Paste is a MIME-keyed dispatch table.** Handlers are registered per clipboard
+flavor — images, then `text/html`, then `text/plain`. The `text/html` handler
+parses the payload, checks `isTulipAppClipboardContent` is present, and hands it
+to the paste dispatcher. So a rewritten `text/html` payload enters Tulip's paste
+path at exactly the same door the real one does.
+
+**Paste is server-mediated.** This is the one that matters. The handler's own
+error message is _"Paste API call succeeded but returned no trigger IDs"_: the
+client sends the payload to an API, **the server creates the trigger**, and the
+client then opens the editor on the returned `newTriggerId`. Pasting is not a
+client-side construction that gets saved later — the record exists on the server
+before the editor opens.
+
+Which means the rewrite has to satisfy the **server**, not just the client. If
+the API validates the event against the destination, a client-side patch changes
+nothing and the feature dies there. That was listed as the question that could
+end this; it is now on the critical path rather than at the end of it. The
+compensation: the server doing the work means a payload it accepts produces a
+_real_ trigger, not something half-constructed in the browser.
+
 ### Why each refusal happens — the leading explanation
 
 Put the vocabulary next to what works and a simpler story appears than "a guard
@@ -402,8 +459,11 @@ half (see [devtools.md](./devtools.md)).
   button can leave actions pointing at an event payload that no longer exists.
   They will surface in the editor; the toggle must never quietly drop or rewrite
   them.
-- **Server-side validation** (H3) can refuse the Save regardless. The toggle
-  cannot and should not try to get around that.
+- **Server-side validation is in the path, not after it.** Paste calls an API
+  that creates the trigger. If that API validates the event against the
+  destination, no client-side rewrite can help, and the toggle should not ship.
+  If it accepts, the trigger it creates is a real one — no half-built record.
+  Either way the toggle must never try to get around a server refusal.
 - **Snapshot first.** The toggle is off by default and its description should
   say plainly that it produces trigger records Tulip's UI would not otherwise
   create.
@@ -433,14 +493,15 @@ Still open:
    (question 2, which would make this moot), or they have to come from the app
    definition in the page (React fiber / store, the
    `expression-editor-fuzzy-main` pattern).
-2. **What routes the paste, and whether `event` survives it.** Does Tulip's
-   handler take the destination from the payload or from editor state, and does
-   it re-derive `event` from the destination (as the component case suggests) or
-   trust the payload's? If it re-derives, the rewrite gets much smaller: set the
-   binding level and let Tulip fill the slot.
-3. **What the guard actually refuses.** With component→component working, the
-   predicate is about surfaces, not widget types — the grep should show it
-   literally.
+2. **What routes the paste, and whether `event` survives it.** Does the
+   dispatcher take the destination from the payload or from editor state, and
+   does it re-derive `event` from the destination (as the component case
+   suggests) or trust the payload's? Still unread — the grep landed on the
+   handler's tail (the log line and editor open), not the branch above it.
+3. **What the guard actually refuses**, in the dispatcher — and, the harder
+   half, **what the paste API accepts**. The client predicate can be read from
+   the bundle; the server's can only be probed by trying a rewritten paste and
+   watching the response.
 4. **Where the buttons go.** The DOM of each trigger list section, enough for a
    selector that injects one button per section and reads which section it is.
    The harvest showed the section headings are exactly the list names
