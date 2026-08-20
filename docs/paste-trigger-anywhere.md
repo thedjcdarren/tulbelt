@@ -289,37 +289,86 @@ end this; it is now on the critical path rather than at the end of it. The
 compensation: the server doing the work means a payload it accepts produces a
 _real_ trigger, not something half-constructed in the browser.
 
-### Why each refusal happens — the leading explanation
+### The paste dispatcher, decompiled
 
-Put the vocabulary next to what works and a simpler story appears than "a guard
-compares surfaces":
+The whole trigger-paste path, read out of the bundle and renamed:
 
-Every built-in component has **exactly one** event. A button fires
-`button-press`, an input fires its change, a table fires its row select — so
-when a trigger is pasted onto a selected component, Tulip can derive the
-destination event with no ambiguity, and does (which is why a `button-press`
-trigger lands happily on a table). The refusals are the cases where that
-derivation has no answer:
+```js
+async function pasteTrigger(content, ctx) {
+  const { trigger } = content;
+  const { app, currentStepNodeId } = ctx;
+  log("[Copy/Paste]: Pasting trigger in app editor", { …ids });
 
-- **Custom widget → different custom widget.** The event carries `eventName` and
-  `customWidgetId`, both belonging to the _source_ widget type. The destination
-  type declares its own set, possibly several, and nothing says which one the
-  trigger should become. No canonical choice, so no paste.
-- **App- and step-level lists.** Paste is aimed by canvas selection, and these
-  lists are not on the canvas. There may be no "guard" refusing them at all —
-  they are simply unreachable, because there is nothing to select that means
-  "the Timers list of this step".
+  if (isAppTrigger(trigger)) {
+    paste({ target: { type: Process } })                       → editAppTrigger
+  } else if (isStepTrigger(trigger)) {
+    if (currentStepNodeId == null) return fail("No active step to paste to");
+    paste({ target: { type: Step, stepId: currentStepNodeId } }) → editStepTrigger
+  } else if (isWidgetTrigger(trigger)) {
+    if (isFormEvent(trigger.event.type)) return error(pastedFormTriggerError);
+    const target = getCurrentWidget();                  // the canvas selection
+    if (target == null) return error(pastedWidgetTriggerNoWidgetError);
+    const patched = validateAndRemap({ triggerToPaste: trigger, targetWidget: target });
+    if (patched == null) return;
+    paste({ target: { type: Widget, widgetId: target._id } })   → editWidgetTrigger
+  } else {
+    log.error("[Copy/paste]: Trigger type not recognized for pasting");
+  }
+}
+```
 
-If that is right, the feature is less about defeating a check and more about
-**supplying the answer Tulip cannot derive**: a button in a specific list names
-its own event outright — `interval` for Timers, `app-start` for App started,
-this widget type's `eventName` + `customWidgetId` for that custom widget
-section. That is the same conclusion the buttons were already pointing at, but
-it means the payload rewrite may be the whole mechanism, with no guard to work
-around.
+**The destination is chosen by the copied trigger's own class — not by where
+you are.** An app trigger always goes to the app level. A step trigger always
+goes to the current step. Only the widget branch consults the canvas selection.
+There is no "surface guard" to defeat, because there was never a way to ask for
+a different surface: class → destination is hardwired.
 
-The bundle grep is what confirms or kills this. If instead there is an explicit
-surface comparison in the paste path, the rewrite has to satisfy that too.
+That reframes the whole feature. It is not about getting past a check. It is
+about **changing the class of the payload before Tulip reads it** — rewrite
+`trigger.event.type` from `step-open` to `button-press` and the dispatcher takes
+the widget branch and pastes onto the selected widget; rewrite it the other way
+and the trigger lands in the current step's list. Each branch then derives its
+own target ids from editor context.
+
+That also dissolves the "an empty section carries no ids" problem entirely: a
+paste button only has to supply an **event type**, a constant string per list.
+It never needs the destination's slot id — Tulip's own branch fills that in.
+
+The widget branch's `validateAndRemap` is where the real checks live, and it
+already does the remapping this feature wants:
+
+```js
+function validateAndRemap({ triggerToPaste, targetWidget, ctx }) {
+  const inStep = ctx.stepContext.getWidgetsInStep({ includeBaseLayoutWidgets: false });
+  if (!inStep.some(w => w._id === targetWidget._id)) return error(…);   // not a pasteable target
+  … // one further custom-widget check, not yet captured
+  if (triggerToPaste.event.customWidgetId !== targetWidget.customWidgetId)
+    return error(pastedCustomWidgetEventOntoDifferentCustomWidget);     // ← the custom→custom refusal
+  if (targetWidget.type !== WidgetTypes.customWidget
+      && triggerToPaste.event.type === CustomWidgetEvent)
+    return error(pastedCustomWidgetEventOntoNonCustomWidget);
+
+  const supported = /* the target widget's own event types */;
+  if (supported.includes(kindOf(triggerToPaste.event.type))) return triggerToPaste;
+  return { ...triggerToPaste,
+           event: { ...triggerToPaste.event, type: defaultEventFor(supported[0]) } };
+}
+```
+
+The last two lines are Tulip **rewriting `event.type` to suit the destination**
+whenever the source event doesn't fit — which is exactly why button→table works,
+and confirms the rewrite this toggle needs is one Tulip already performs on
+itself.
+
+Custom widgets are the one place with genuine, explicit refusals, and both are
+just field comparisons: `event.customWidgetId` must equal the target's, and a
+`custom-widget-event` may not land on a non-custom widget. Rewriting
+`customWidgetId` (and `eventName`) to the destination's satisfies them.
+
+**Two entry-level guards** worth respecting: the payload's `sourceCustomer` must
+match the current instance (else `pasteAcrossCustomersError`), and a
+cross-workspace paste carrying `queryIds` or `recordPlaceholders` is refused.
+The rewrite must leave all of those fields alone.
 
 **Preserve keys we don't understand.** `haltOnError` shows up on app-start,
 app-complete, app-cancel, step-open and step-closed triggers but not on
@@ -389,11 +438,15 @@ which is exactly what collecting one payload per surface will show.
 
 **The mapping is the target's, not the source's.** Because the destination is
 picked by clicking a specific **Paste trigger** button (see below), the target
-event is never in doubt: the button in the "On step exit" list means
-`event.type` = whatever step-exit is called, the one in a custom widget's
-"On scan" section means that widget's declared event id. There is no guessing
-and no "leave the When unset" fallback — the affordance carries the answer.
-That is the second reason the buttons are load-bearing rather than cosmetic.
+event is never in doubt: the button in the "On step exit" list writes
+`event.type = "step-closed"`, the one under Timers writes `"interval"`, the one
+in App started writes `"app-start"`. There is no guessing and no "leave the When
+unset" fallback — the affordance carries the answer.
+
+And since the dispatcher routes on the trigger's class, writing that one string
+is also what aims the paste: `step-closed` makes Tulip take the step branch and
+target the current step, `app-start` makes it take the app branch. The button
+supplies an event type; Tulip supplies everything else.
 
 ## Toggle sketch
 
@@ -483,32 +536,32 @@ Also answered: the event vocabulary for the app- and step-level surfaces, and
 that all three binding levels share one record shape (see
 [the vocabulary table](#the-event-vocabulary)).
 
+Also answered by the dispatcher: what routes the paste (the trigger's own
+class), that Tulip re-derives `event.type` for widget targets itself, and that
+the only explicit refusals are the two custom-widget field comparisons and the
+form-trigger one.
+
 Still open:
 
-1. **Where the destination's ids come from when the list is empty.** A paste
-   button needs the destination's `event.id` (the slot) and, for a custom
-   widget, `eventName` + `customWidgetId`. An existing trigger in that section
-   carries all of them — but a section with no triggers yet carries nothing, and
-   that is the common case for this feature. Either Tulip re-derives them
-   (question 2, which would make this moot), or they have to come from the app
-   definition in the page (React fiber / store, the
-   `expression-editor-fuzzy-main` pattern).
-2. **What routes the paste, and whether `event` survives it.** Does the
-   dispatcher take the destination from the payload or from editor state, and
-   does it re-derive `event` from the destination (as the component case
-   suggests) or trust the payload's? Still unread — the grep landed on the
-   handler's tail (the log line and editor open), not the branch above it.
-3. **What the guard actually refuses**, in the dispatcher — and, the harder
-   half, **what the paste API accepts**. The client predicate can be read from
-   the bundle; the server's can only be probed by trying a rewritten paste and
-   watching the response.
+1. **What the paste API accepts.** The client sends
+   `paste({ appVersionId, body: { target, triggers: [trigger], variables,
+   recordPlaceholders } })` and the server creates the record. A rewritten
+   payload produces a _consistent_ (target, trigger) pair — the same pairing a
+   native paste sends — so it has a good chance, but only an experiment settles
+   it. **This is the question that decides whether the toggle ships.**
+2. **Whether the server minds a stale `event.id`.** The slot id in a rewritten
+   payload belongs to the source's list. Tulip's own widget-branch remap leaves
+   `event.id` untouched while changing `event.type`, which suggests the server
+   does not key off it — but that is inference, not evidence.
+3. **The one unread check** in `validateAndRemap`, between the
+   widgets-in-step test and the `customWidgetId` comparison — almost certainly
+   "a non-custom-widget event may not land on a custom widget", which would
+   constrain pasting a button trigger onto a custom widget.
 4. **Where the buttons go.** The DOM of each trigger list section, enough for a
    selector that injects one button per section and reads which section it is.
-   The harvest showed the section headings are exactly the list names
+   The harvest showed section headings are exactly the list names
    ("App started", "Timers", "Machines & devices", …), so the heading is a
    usable key — but the injection point still needs a real DOM dump.
-5. Does **Save** accept a cross-surface trigger once the editor opens, or is
-   there a second gate server-side? (The one question that can end this feature.)
 
 ## Running the probe
 
