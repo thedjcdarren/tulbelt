@@ -74,9 +74,24 @@ reads the payload out of `event.clipboardData` in between.
 editor.** Tulip's own clientLogger brackets the paste with two lines:
 
 ```
-[Copy/Paste]: Pasting trigger in app editor      { sourceAppId, targetAppId, … }
-[Copy/Paste]: Pasting trigger, opening trigger editor { oldAppVersionId, oldTriggerId, … }
+[Copy/Paste]: Pasting trigger in app editor
+    { sourceAppId, sourceStepId, targetAppId, targetStepId }
+[Copy/Paste]: Pasting trigger, opening trigger editor
+    { oldAppVersionId, oldTriggerId, newAppVersionId, newTriggerId }
 ```
+
+Both context objects are worth reading closely:
+
+- **The destination comes from editor state, not the payload.** Tulip has a
+  `targetStepId` before it has decided anything, and there is no widget id in
+  that context at all — source or target. So the handler locates where the user
+  is (app + step) and takes the widget from canvas selection separately. That is
+  precisely what the injected paste buttons have to supply for surfaces where
+  there is no selection to read.
+- **The trigger is re-IDed on paste** — `newTriggerId` differs from
+  `oldTriggerId`. So the payload's `id`, and presumably `versionSetId` /
+  `importFamilyId` / `created` / `lastModified`, are Tulip's to regenerate. The
+  rewrite should leave all of them alone and touch only the binding.
 
 Every paste in the run logged the first line — **including the refused one**,
 which proves the payload is read and parsed before the compatibility check.
