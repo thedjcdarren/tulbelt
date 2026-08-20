@@ -93,7 +93,88 @@ refused paste never logged the second. Nothing was written to `localStorage`
 `readText`/`read` call was made, and no warning or error was logged on refusal —
 it fails silently.
 
-So of the three shapes this could have taken, the first is what Tulip does:
+### The payload
+
+It rides on the **`text/html`** flavor of the clipboard, not `text/plain`: a
+single empty `<span>` whose `data-tulip-clipboard` attribute holds base64 of a
+JSON envelope. (So a trigger copied to a text editor looks like nothing at all —
+there is no visible text.)
+
+```
+<meta charset='utf-8'><html><head></head><body>
+  <span data-tulip-clipboard="<base64 of the JSON below>"></span>
+</body></html>
+```
+
+Decoded, with values replaced by their kind:
+
+```jsonc
+{
+  "isTulipAppClipboardContent": true,   // positive identification — match on this
+  "clipboardType": "Trigger",           // widgets and steps presumably use other values
+  "sourceStepId": "<stepId>",
+  "sourceAppVersionId": "<appVersionId>",
+  "sourceAppId": "<appId>",
+  "sourceCustomer": "<instance hostname>",
+  "sourceWorkspaceId": "<workspaceId>",
+  "trigger": {
+    "id": "<triggerId>",
+    "name": "Example Trig",
+    "versionSetId": "<id>",
+    "importFamilyId": "<id>",
+    "appVersionId": "<appVersionId>",
+    "stepId": "<stepId>",              // owning step
+    "widgetId": "<widgetId>",          // owning widget — absent for step/app triggers?
+    "disabled": false,
+    "workspaces": { "scope": "specific", "workspaceIds": ["<workspaceId>"] },
+    "created": { "at": "<iso>", "by": { "type": "user", "id": "<userId>" } },
+    "lastModified": { "at": "<iso>", "by": { "type": "user", "id": "<userId>" } },
+    "clauses": [                       // the If / Then — owner-agnostic
+      {
+        "id": "<id>",
+        "type": "and",
+        "conditions": [],
+        "actions": [
+          {
+            "id": "<id>",
+            "type": "show-message",
+            "inputs": [ { "datasourceType": "static", "schema": { "type": "string" },
+                          "permissions": { "isReadable": true, "isWritable": false },
+                          "params": { "value": "Hi" } } ],
+            "isTransition": false
+          }
+        ]
+      }
+    ],
+    "event": { "id": "<id>", "type": "button-press" }   // ← the owner binding
+  },
+  "queryIds": [],                      // dependencies carried along with the trigger
+  "variables": [],
+  "recordPlaceholders": []
+}
+```
+
+Two things follow immediately.
+
+**The discriminator is `trigger.event.type`.** The payload carries no widget
+_type_ field at all — only `widgetId`, which is an id, not a kind, and which
+cannot be resolved at all when pasting into a different app (a documented,
+working case). So the compatibility check has nothing to compare _but_
+`event.type` against what the paste target can fire. `button-press` is the only
+value seen so far; the rest of the vocabulary is what the bundle grep is for.
+
+**`clauses` is the part worth moving, and it is already owner-agnostic** —
+conditions and actions, with no back-reference to the widget. Which is why a
+rewrite is plausible at all: change the binding, keep the clauses.
+
+Since pasting onto a _different_ button works today, Tulip must already take the
+new `stepId`/`widgetId` from the current selection rather than trusting the
+payload's. If that holds, the rewrite may need to touch nothing but
+`trigger.event`.
+
+### Which hypothesis was right
+
+Of the three shapes this could have taken, the first is what Tulip does:
 
 | Hypothesis                                                | Verdict                                                        |
 | --------------------------------------------------------- | -------------------------------------------------------------- |
@@ -140,10 +221,11 @@ Ranked by preference, with the precedent already in this repo:
 
 Assuming H1, two shapes of fix, to be chosen once the payload is known:
 
-**A — discriminator patch.** Parse the payload, replace only the owner-identity
-fields (owner kind, widget id/type, and the event name where an equivalent
-exists on the target), leave conditions and actions untouched. Minimal, and it
-keeps whatever Tulip's version of the payload contains that we don't understand.
+**A — discriminator patch.** Parse the payload, replace only `trigger.event`
+(and `stepId` / `widgetId` if Tulip turns out not to re-home them), leave
+`clauses` untouched. Minimal, and it keeps whatever else Tulip's version of the
+payload contains that we don't understand. This is the expected shape of the
+fix.
 
 **B — envelope swap.** Keep only `name`, conditions and actions from the copied
 trigger and rebuild the envelope in the shape the target's own copy payload
@@ -180,11 +262,14 @@ Two halves, following `filters-builder` / `app-list-date-columns`:
   `<html data-tulbelt-pta-enabled>`.
 - `toggles/paste-trigger-anywhere-main.js` (MAIN world, `document_start` — the
   wrapper must be installed before Tulip's paste handler can run) — wraps
-  `DataTransfer.prototype.getData` and rewrites the returned payload only when
-  **all** of: the `<html>` flag is set, a paste is in flight, the payload parses,
-  it is positively identified as a Tulip trigger (not merely "is JSON"), and its
-  owner differs from the paste target. Every other read passes through
-  byte-identical, so pasting text into any field in the editor is untouched.
+  `DataTransfer.prototype.getData`. On a `text/html` read it rewrites only when
+  **all** of: the `<html>` flag is set, the string carries a
+  `data-tulip-clipboard` attribute, the base64 decodes to JSON with
+  `isTulipAppClipboardContent === true` and `clipboardType === "Trigger"`, and
+  the payload's `event.type` doesn't match the target's. Then it patches
+  `trigger.event`, re-encodes, and returns the rebuilt HTML. Every other read —
+  every ordinary text paste in the editor — returns the original string
+  byte-identical.
 
 Revert: clearing the flag makes the wrapper a pass-through on the very next
 read. The wrapper itself stays installed for the life of the page — Tulip may
@@ -213,24 +298,27 @@ half (see [devtools.md](./devtools.md)).
 
 ## Open questions
 
-Answered by the first probe run: the clipboard is the channel
-(`navigator.clipboard.write`), the read is a trusted `paste` event, the payload
-_is_ read on a refused paste, and refusal is silent. Still open, all of them
-about the payload itself:
+Answered so far: the clipboard is the channel (`navigator.clipboard.write`), the
+read is a trusted `paste` event on the `text/html` flavor, the payload _is_ read
+on a refused paste, refusal is silent, and the owner binding in the payload is
+`trigger.event.type`.
 
-1. Which MIME type does the `ClipboardItem` carry — `text/plain`, or a custom
-   type? (Decides what the `getData` wrapper matches on.)
-2. What is the payload's shape — which fields identify the owner, the widget
-   type, and the event?
-3. Do step, app and widget triggers serialize as the same record with a
-   different owner field, or as different records? (Strategy A vs B.)
-4. Do two different custom widget types produce payloads that differ only by a
-   widget-type id?
-5. Can the rewrite name the target? The paste target has to be identified from
-   the payload's own vocabulary — the probe's Ctrl+V capture found no
-   `.selected` widget node, so the DOM selector for "what is selected" still
-   needs finding, or the target has to be inferred another way (e.g. Tulip's
-   `[Copy/Paste]` log context, which already knows `targetAppId`).
+Still open:
+
+1. **The event-type vocabulary.** `button-press` is the only value seen. What
+   does an interactive table fire, a text input, a step-enter trigger, an
+   app-level trigger, a custom widget event? Without this the rewrite has
+   nothing to write. (Bundle grep, or copy one trigger of each kind and decode.)
+2. **What exactly the guard compares.** `event.type` against a per-widget-type
+   list is the inference; the bundle grep should show the actual predicate.
+3. **Does Tulip re-home `stepId` / `widgetId` from the selection on paste?** If
+   yes, the rewrite only has to touch `trigger.event`. If no, it has to name the
+   target widget too — and then the DOM selector for "what is selected" still
+   needs finding (the Ctrl+V capture found no `.selected` node).
+4. Do step and app triggers serialize as the same record with `widgetId` absent,
+   or as a different record? (Strategy A vs B.)
+5. Do two different custom widget types differ only by the widget-declared
+   `event.id`?
 6. Does **Save** accept a cross-type trigger once the editor opens, or is there
    a second gate server-side? (The one question that can end this feature.)
 
@@ -260,8 +348,36 @@ about the payload itself:
 
 The report replaces the instance hostname with `your-instance.tulip.co`, but a
 tenant name appearing as plain text inside a captured payload is **not**
-detected — the [devtools.md](./devtools.md) rule applies: chat or gitignored
-local notes only, never a tracked file.
+detected — and a trigger payload always carries one, in `sourceCustomer`, plus
+app, workspace and user ids. The [devtools.md](./devtools.md) rule applies:
+chat or gitignored local notes only, never a tracked file.
+
+### Decoding a payload by hand
+
+The fastest way to read what a copy produced — no probe needed, just copy a
+trigger first:
+
+```js
+const html = await (await navigator.clipboard.read())
+  .flatMap((i) => (i.types.includes("text/html") ? [i] : []))[0]
+  .getType("text/html")
+  .then((b) => b.text());
+const b64 = html.match(/data-tulip-clipboard="([^"]+)"/)[1];
+JSON.parse(atob(b64));
+```
+
+Doing this once per trigger kind (button, interactive table, text input, step
+enter, app level, custom widget) is what fills in the event-type vocabulary.
+
+### Grepping Tulip's bundles
+
+[`probes/bundle-grep.js`](./probes/bundle-grep.js) re-fetches the editor
+bundles the tab already has and prints the code around the clipboard strings
+(`isTulipAppClipboardContent`, `data-tulip-clipboard`, the `[Copy/Paste]` log
+line, `button-press`). Paste it, run `await __grep()`, then `copy(__grepJson)`.
+That should show the paste handler itself: the event-type enum, whether the
+target's step/widget id is taken from the selection, and the predicate that
+refuses the paste.
 
 ## Sources
 
