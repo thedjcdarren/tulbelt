@@ -343,6 +343,23 @@
   // label. Run once per surface (App started, On step exit, a custom widget, …)
   // to collect the `event` vocabulary the paste buttons have to write.
   window.__tpaDecode = async (label = "clipboard") => {
+    // navigator.clipboard.read() refuses while the document is unfocused, and
+    // typing this in the console means DevTools holds focus. Wait for the page
+    // to get it back — clicking the canvas background is enough and changes
+    // nothing but the selection.
+    if (!document.hasFocus()) {
+      console.log("[tpa] click the page (canvas background is fine) — waiting for focus…");
+      await new Promise((resolve) => {
+        const done = () => {
+          window.removeEventListener("focus", done);
+          document.removeEventListener("click", done, true);
+          resolve();
+        };
+        window.addEventListener("focus", done, { once: true });
+        document.addEventListener("click", done, true);
+      });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
     try {
       const items = await navigator.clipboard.read();
       const item = items.find((i) => i.types.includes("text/html"));
@@ -362,6 +379,9 @@
       return payload;
     } catch (err) {
       rec("decode:failed", { label, error: String(err) });
+      if (String(err).includes("not focused")) {
+        return "failed: the page lost focus again — click the page, then re-run";
+      }
       return "failed: " + String(err);
     }
   };
