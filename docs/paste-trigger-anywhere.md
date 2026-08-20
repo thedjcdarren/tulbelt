@@ -1,59 +1,51 @@
 # Paste Trigger Anywhere — research notes and design
 
 Working notes for a planned toggle that lets a copied trigger be pasted onto an
-owner Tulip currently refuses: a button trigger onto an interactive table, an
-"On step enter" trigger onto a button, a trigger from one custom widget type
-onto another.
+owner Tulip currently refuses.
 
-Status: **research.** A probe run on a live instance (Tulip's app editor, app
-version editor page) settled how the copy/paste path works and where the guard
-sits — see [Confirmed by probe](#confirmed-by-probe). What is still missing is
-the payload's own shape; the remaining [open questions](#open-questions) all
-depend on it.
+Status: **research.** A probe run on a live instance settled how the copy/paste
+path works, where the guard sits, and what the clipboard payload contains — see
+[Confirmed by probe](#confirmed-by-probe). What is missing is the event-type
+vocabulary the rewrite has to write into; the remaining
+[open questions](#open-questions) are all about that.
 
-## What Tulip does today
+## The actual gap
 
-Copy/cut lives on the trigger row itself — the small icons beside each trigger
-in the side pane and trigger list. (`hide-view-only-triggers` already keys off
-that row: `[class*="triggerRowStyles"]`, with `[data-testid^="view-trigger-"]`
-marking rows that keep their row actions.) Paste is a keyboard action on the
-_target_, not a button: select the widget or step, press Ctrl/Cmd+V, and Tulip
-opens the trigger editor pre-filled with the copied trigger. It is bound to the
-new owner only when you press **Save**, so nothing is committed until the user
-confirms — which is what makes a paste-side tweak safe to attempt.
+**Component-to-component already works.** A trigger copied from a button pastes
+onto an input field or an interactive table today, even though those are
+different widget types. So widget triggers are _not_ what needs fixing, and the
+guard is not per-widget-type.
 
-Documented behavior worth keeping in mind:
+What is refused is crossing between the trigger **surfaces**:
 
-- Copy, cut and paste work **within an app and into a different app**. If the
-  destination app already has a variable with the same name and type as one the
-  trigger references, the pasted trigger binds to the existing variable.
-- Copying a **widget** copies its triggers with it; copying a **step** copies
-  that step's enter/exit/timer/machine-and-device triggers with it.
-- The restriction is on the paste target: a trigger can only be pasted onto the
-  **same kind of object** it was copied from — button triggers onto buttons.
-  There is no supported way to move a trigger between object types; the closest
-  thing to a workaround is rebuilding the trigger by hand.
+| Surface           | Events                                                                        |
+| ----------------- | ----------------------------------------------------------------------------- |
+| App level         | App started · App completed · App cancelled                                    |
+| Step level        | On step enter · On step exit · Timers · Machines & devices                     |
+| Component (widget) | button press, input change, table row select, … — interchangeable already      |
+| Custom widget     | events **declared by that widget's own code** — not interchangeable, even between two custom widgets |
 
-## What "same kind of object" is protecting
+The wanted moves are: any app-level event ↔ any other app-level event, app ↔
+step, step ↔ step, either of those ↔ a component, and one custom widget type →
+a different custom widget type.
+
+**Paste needs somewhere to land.** Today paste is Ctrl/Cmd+V against the
+_selected widget_ — which is why component-to-component works at all. App-level
+and step-level trigger lists have no canvas selection to aim at, so there is
+nothing to press Ctrl+V "on". The feature therefore needs an explicit **Paste
+trigger** affordance in each of those trigger lists (App started, App completed,
+App cancelled, On step enter, On step exit, Timers, Machines & devices, and each
+custom widget event section) so the destination is picked by pointing at it. The
+button is not decoration — it is how the target is named.
+
+## What the surface split is protecting
 
 A trigger is `When` / `If` / `Then`. The `If` (conditions) and `Then` (actions
 and transitions) are owner-agnostic — that is exactly why builders want to move
-them. The `When` is not:
-
-| Owner                    | `When`                                                     |
-| ------------------------ | ---------------------------------------------------------- |
-| Button                   | button pressed                                              |
-| Input widgets            | the input's value changes                                   |
-| Interactive table        | a row is selected (and loads the linked record placeholder) |
-| Custom widget            | events **declared by that widget's own code**, with payloads |
-| Step                     | on step enter / on step exit / timer / machine and device   |
-| App                      | app started / app completed / …                             |
-
-So a copied trigger carries an event binding that may name something the new
-owner cannot fire (a custom widget's `onScanComplete` means nothing to a
-button), and its actions may reference owner-scoped context that only exists
-under the old owner. Tulip's guard exists so a trigger can never end up with a
-`When` that its owner cannot produce.
+them. The `When` is bound to its surface: a step's `on step enter` means nothing
+to an app-level list, and a custom widget's declared event means nothing to a
+different custom widget. Tulip's guard exists so a trigger can never end up with
+a `When` its owner cannot produce.
 
 That is a real constraint, and the toggle should not pretend otherwise: the
 goal is to let the paste **happen** and land the user in the trigger editor
@@ -64,8 +56,8 @@ it should both be better than retyping fifteen actions.
 
 ## Confirmed by probe
 
-One session on a live instance, copying a trigger and pasting it onto both a
-compatible and an incompatible target:
+One session on a live instance, copying a button trigger and pasting it onto
+several targets — some accepted, one refused:
 
 **Copy goes to the real system clipboard**, via
 `navigator.clipboard.write()` — a `ClipboardItem`, not `writeText`. It fires
@@ -86,12 +78,14 @@ editor.** Tulip's own clientLogger brackets the paste with two lines:
 [Copy/Paste]: Pasting trigger, opening trigger editor { oldAppVersionId, oldTriggerId, … }
 ```
 
-Every paste in the run logged the first line — including the refused one, which
-proves the payload is read and parsed before the compatibility check. Only the
-refused paste never logged the second. Nothing was written to `localStorage`
-(the only writes were `tulip-last-activity` and feature-flag chatter), no
-`readText`/`read` call was made, and no warning or error was logged on refusal —
-it fails silently.
+Every paste in the run logged the first line — **including the refused one**,
+which proves the payload is read and parsed before the compatibility check.
+Only the refused paste never logged the second. (Its Ctrl+V also differed in
+one visible way: the editor had a different set of context-pane testids on
+screen, consistent with a different surface being open rather than a canvas
+widget being selected.) Nothing was written to `localStorage` (the only writes
+were `tulip-last-activity` and feature-flag chatter), no `readText`/`read` call
+was made, and no warning or error was logged on refusal — it fails silently.
 
 ### The payload
 
@@ -154,23 +148,25 @@ Decoded, with values replaced by their kind:
 }
 ```
 
-Two things follow immediately.
+Three things follow immediately.
 
-**The discriminator is `trigger.event.type`.** The payload carries no widget
-_type_ field at all — only `widgetId`, which is an id, not a kind, and which
-cannot be resolved at all when pasting into a different app (a documented,
-working case). So the compatibility check has nothing to compare _but_
-`event.type` against what the paste target can fire. `button-press` is the only
-value seen so far; the rest of the vocabulary is what the bundle grep is for.
+**The owner binding is `trigger.event`, plus `stepId` / `widgetId`.** The
+payload carries no widget _type_ field at all — only ids, and ids cannot be
+resolved when pasting into a different app (a documented, working case). So the
+paste handler has nothing to route on but `event.type` and which of
+`stepId`/`widgetId` are set.
+
+**Tulip already rewrites the binding on a widget paste.** A `button-press`
+trigger lands happily on an interactive table, which does not fire
+`button-press` — so the existing paste path re-homes both the ids and the event
+to whatever the selected widget is. That is encouraging: the machinery to
+re-bind a trigger exists in Tulip's own code and works. The refusal is about
+which surfaces the paste path is willing to route _between_, not about the
+trigger record being unportable.
 
 **`clauses` is the part worth moving, and it is already owner-agnostic** —
 conditions and actions, with no back-reference to the widget. Which is why a
 rewrite is plausible at all: change the binding, keep the clauses.
-
-Since pasting onto a _different_ button works today, Tulip must already take the
-new `stepId`/`widgetId` from the current selection rather than trusting the
-payload's. If that holds, the rewrite may need to touch nothing but
-`trigger.event`.
 
 ### Which hypothesis was right
 
@@ -219,27 +215,27 @@ Ranked by preference, with the precedent already in this repo:
 
 ## Rewrite strategies
 
-Assuming H1, two shapes of fix, to be chosen once the payload is known:
+Assuming H1, two shapes of fix, to be chosen once the event vocabulary is known:
 
 **A — discriminator patch.** Parse the payload, replace only `trigger.event`
-(and `stepId` / `widgetId` if Tulip turns out not to re-home them), leave
-`clauses` untouched. Minimal, and it keeps whatever else Tulip's version of the
-payload contains that we don't understand. This is the expected shape of the
-fix.
+and the owner ids (`stepId`, `widgetId` — set for a widget target, cleared for a
+step or app target), leave `clauses` untouched. Minimal, and it keeps whatever
+else Tulip's version of the payload contains that we don't understand. This is
+the expected shape of the fix.
 
 **B — envelope swap.** Keep only `name`, conditions and actions from the copied
-trigger and rebuild the envelope in the shape the target's own copy payload
-uses. Needed if step/app/widget triggers turn out to be structurally different
-records rather than the same record with a different owner field. Requires a
-reference envelope per owner kind, which the probe collects by copying one
-trigger of each kind.
+trigger and rebuild the envelope in the shape the target surface's own copy
+payload uses. Needed if step/app/widget triggers turn out to be structurally
+different records rather than the same record with different owner fields —
+which is exactly what collecting one payload per surface will show.
 
-**Event mapping.** Where the target has an obvious single event (button →
-pressed, input → value changed, interactive table → row selected), map to it.
-Where it doesn't (custom widgets, which declare their own), leave the `When`
-empty rather than guessing, so the editor shows it as a choice the user has to
-make. The paste is a draft in an editor, not a commit — an unset `When` is a
-prompt, not a corruption.
+**The mapping is the target's, not the source's.** Because the destination is
+picked by clicking a specific **Paste trigger** button (see below), the target
+event is never in doubt: the button in the "On step exit" list means
+`event.type` = whatever step-exit is called, the one in a custom widget's
+"On scan" section means that widget's declared event id. There is no guessing
+and no "leave the When unset" fallback — the affordance carries the answer.
+That is the second reason the buttons are load-bearing rather than cosmetic.
 
 ## Toggle sketch
 
@@ -248,28 +244,47 @@ prompt, not a corruption.
   id: 'paste-trigger-anywhere',
   name: 'Paste Trigger Anywhere',
   description:
-    'In the app editor, allow a copied trigger to be pasted onto any widget, step, or app event — not just the same kind of object it was copied from. The trigger editor opens pre-filled as usual; the event ("When") is remapped where the target has an equivalent and left unset where it does not, and nothing is saved until you press Save.',
+    'In the app editor, add a "Paste trigger" button to every trigger list — App started/completed/cancelled, On step enter/exit, Timers, Machines & devices, and each custom widget event — so a copied trigger can be pasted across those surfaces instead of only onto a selected component. The trigger editor opens pre-filled as usual with the event set to the list you pasted into, and nothing is saved until you press Save.',
   defaultEnabled: false,
   major: true,
 }
 ```
 
-Two halves, following `filters-builder` / `app-list-date-columns`:
+Three parts, following `filters-builder` / `app-list-date-columns`:
 
 - `toggles/paste-trigger-anywhere.js` (isolated, default array) — the toggle
   lifecycle via `registerToggle`, the app-version-editor path check (the
   `EDITOR_PATH` regex from `snap-to-grid.js`), and it sets/clears
   `<html data-tulbelt-pta-enabled>`.
-- `toggles/paste-trigger-anywhere-main.js` (MAIN world, `document_start` — the
-  wrapper must be installed before Tulip's paste handler can run) — wraps
-  `DataTransfer.prototype.getData`. On a `text/html` read it rewrites only when
-  **all** of: the `<html>` flag is set, the string carries a
-  `data-tulip-clipboard` attribute, the base64 decodes to JSON with
-  `isTulipAppClipboardContent === true` and `clipboardType === "Trigger"`, and
-  the payload's `event.type` doesn't match the target's. Then it patches
-  `trigger.event`, re-encodes, and returns the rebuilt HTML. Every other read —
-  every ordinary text paste in the editor — returns the original string
-  byte-identical.
+- **The paste buttons** (same isolated script) — one injected per trigger list
+  section, in the `option-sets-trigger` / `collapse-tables-tile` style: find the
+  section, clone Tulip's own button so it looks native, mark it with a
+  `data-tulbelt-pta-*` attribute, and remove every one of them on disable.
+  Each button knows the `event` its section represents. On click it reads the
+  clipboard, rewrites the payload for that event, and hands it to Tulip's paste
+  path — the click is a user gesture, so `navigator.clipboard.read()` is
+  allowed.
+- `toggles/paste-trigger-anywhere-main.js` (MAIN world, `document_start`) —
+  gets the rewritten payload into Tulip's paste path. Two routes, and the bundle
+  grep decides which:
+
+  1. **Synthesize the paste.** Because our button owns the gesture, it can build
+     a `DataTransfer` holding the rewritten `text/html` and dispatch a
+     `ClipboardEvent('paste')` at whatever element Tulip listens on. No patching
+     at all, and nothing to revert. Risk: the event is untrusted, and Tulip may
+     still take its destination from editor selection state rather than from the
+     payload — in which case the button alone can't aim it.
+  2. **Wrap `DataTransfer.prototype.getData`.** Rewrite the string as Tulip's
+     handler reads it, keeping Tulip's own trusted event. Rewrite only when
+     **all** of: the `<html>` flag is set, the string carries a
+     `data-tulip-clipboard` attribute, the base64 decodes to JSON with
+     `isTulipAppClipboardContent === true` and `clipboardType === "Trigger"`, and
+     a Tulbelt paste is in flight. Every other read — every ordinary text paste
+     in the editor — returns the original string byte-identical.
+
+  Route 1 is cleaner if Tulip's handler is payload-driven; route 2 is the
+  fallback, and the two compose (synthesize the event, serve the payload through
+  the wrapper) if the handler insists on a trusted event's own `clipboardData`.
 
 Revert: clearing the flag makes the wrapper a pass-through on the very next
 read. The wrapper itself stays installed for the life of the page — Tulip may
@@ -305,22 +320,29 @@ on a refused paste, refusal is silent, and the owner binding in the payload is
 
 Still open:
 
-1. **The event-type vocabulary.** `button-press` is the only value seen. What
-   does an interactive table fire, a text input, a step-enter trigger, an
-   app-level trigger, a custom widget event? Without this the rewrite has
-   nothing to write. (Bundle grep, or copy one trigger of each kind and decode.)
-2. **What exactly the guard compares.** `event.type` against a per-widget-type
-   list is the inference; the bundle grep should show the actual predicate.
-3. **Does Tulip re-home `stepId` / `widgetId` from the selection on paste?** If
-   yes, the rewrite only has to touch `trigger.event`. If no, it has to name the
-   target widget too — and then the DOM selector for "what is selected" still
-   needs finding (the Ctrl+V capture found no `.selected` node).
-4. Do step and app triggers serialize as the same record with `widgetId` absent,
-   or as a different record? (Strategy A vs B.)
+1. **The event vocabulary per surface.** `button-press` is the only value seen.
+   What is in `event` for App started / completed / cancelled, On step enter,
+   On step exit, Timers, Machines & devices, and a custom widget's declared
+   event? Without these the buttons have nothing to write. (One decode per
+   surface, or the bundle grep.)
+2. **How the surfaces differ structurally.** Does a step trigger serialize as
+   the same record with `widgetId` absent, an app trigger with neither
+   `stepId` nor `widgetId`? Or are they different records? (Strategy A vs B.)
+3. **What routes the paste.** Does Tulip's handler decide the destination from
+   the payload, or from editor selection state? This decides whether the
+   injected buttons can drive Tulip's own paste path (route 1) or need the
+   `getData` wrapper (route 2).
+4. **What the guard actually refuses.** With component→component working, the
+   predicate is about surfaces, not widget types — the grep should show it
+   literally.
 5. Do two different custom widget types differ only by the widget-declared
-   `event.id`?
-6. Does **Save** accept a cross-type trigger once the editor opens, or is there
-   a second gate server-side? (The one question that can end this feature.)
+   `event.id`, or does the payload name the widget type somewhere?
+6. **Where the buttons go.** The DOM of each trigger list section: App
+   started/completed/cancelled, the four step lists, and a custom widget's event
+   sections — enough of a selector to inject one button per section and to read
+   which section it is.
+7. Does **Save** accept a cross-surface trigger once the editor opens, or is
+   there a second gate server-side? (The one question that can end this feature.)
 
 ## Running the probe
 
@@ -332,14 +354,19 @@ Still open:
    [`probes/trigger-clipboard-probe.js`](./probes/trigger-clipboard-probe.js)
    and press Enter. It prints `[tpa] armed`.
 4. Reproduce, calling `__tpaNote('...')` between steps to label them:
-   - copy a button trigger, then paste it onto **another button** (the case that
-     works today);
-   - paste the same trigger onto an **interactive table** (refused today);
-   - copy an **On step enter** trigger, paste it onto a **button** (refused);
+   - copy a button trigger, paste it onto an **interactive table or input**
+     (the cross-component case that already works — the baseline);
+   - copy an **On step enter** trigger and try to paste it onto a button
+     (refused);
+   - copy a button trigger and try to paste it onto a step or app-level list
+     (refused — and worth capturing precisely because there is nothing to aim
+     Ctrl+V at, which is the gap the paste buttons fill);
    - if custom widgets are in play, copy a trigger from one custom widget type
-     and paste it onto a different one (refused).
-5. Also copy one trigger of each kind you care about (button, step, app, custom
-   widget) so the report carries a reference payload for each.
+     and try to paste it onto a different one (refused).
+5. Also copy one trigger from **each surface** — App started, App completed,
+   App cancelled, On step enter, On step exit, Timers, Machines & devices, a
+   component, a custom widget — so the report carries a reference payload for
+   each. These are what fill in the event vocabulary.
 6. Run `copy(__tpaDump())` and paste the JSON into the chat — that is the
    copy/paste-relevant subset (payloads, `getData` reads, Tulip's own
    `[Copy/Paste]` lines). `copy(__tpaReport())` gives everything including
@@ -352,22 +379,36 @@ detected — and a trigger payload always carries one, in `sourceCustomer`, plus
 app, workspace and user ids. The [devtools.md](./devtools.md) rule applies:
 chat or gitignored local notes only, never a tracked file.
 
-### Decoding a payload by hand
+### Collecting one payload per surface
 
-The fastest way to read what a copy produced — no probe needed, just copy a
-trigger first:
+With the probe loaded, copy a trigger and then label it:
+
+```js
+await __tpaDecode("App started");
+```
+
+Repeat for App completed, App cancelled, On step enter, On step exit, Timers,
+Machines & devices, a component, and each custom widget. Every decode is filed
+into the same report, and together they are the event vocabulary the paste
+buttons write into.
+
+Without the probe, the same thing by hand:
 
 ```js
 const html = await (await navigator.clipboard.read())
   .flatMap((i) => (i.types.includes("text/html") ? [i] : []))[0]
   .getType("text/html")
   .then((b) => b.text());
-const b64 = html.match(/data-tulip-clipboard="([^"]+)"/)[1];
-JSON.parse(atob(b64));
+JSON.parse(atob(html.match(/data-tulip-clipboard="([^"]+)"/)[1]));
 ```
 
-Doing this once per trigger kind (button, interactive table, text input, step
-enter, app level, custom widget) is what fills in the event-type vocabulary.
+### Finding where the paste buttons go
+
+With a trigger list open in the context pane, `__tpaPane('step triggers')`
+prints its structure (tags, testids, first class, own text) and files it in the
+report. One per surface — app-level list, step-level list, a custom widget's
+event sections — is enough to work out the injection point and how a section
+identifies itself.
 
 ### Grepping Tulip's bundles
 

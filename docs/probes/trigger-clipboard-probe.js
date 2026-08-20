@@ -23,6 +23,12 @@
 //     themselves by testid/aria-label)
 //   * console.warn / console.error (a refused paste often complains there)
 //
+// Two helpers to call by hand, both filed into the same report:
+//   __tpaDecode('App started')  — decode the trigger currently on the clipboard
+//     (run once per surface to collect the `event` vocabulary)
+//   __tpaPane('step triggers')  — structural dump of the open trigger list, for
+//     working out where a "Paste trigger" button can be injected
+//
 // Then: `copy(__tpaDump())` for just the copy/paste-relevant entries (what to
 // send back), or `copy(__tpaReport())` for everything. Both redact the
 // hostname. __tpaStop() restores every patched function.
@@ -333,6 +339,70 @@
     return "noted";
   };
 
+  // Decode whatever trigger is on the clipboard right now, and file it under a
+  // label. Run once per surface (App started, On step exit, a custom widget, …)
+  // to collect the `event` vocabulary the paste buttons have to write.
+  window.__tpaDecode = async (label = "clipboard") => {
+    try {
+      const items = await navigator.clipboard.read();
+      const item = items.find((i) => i.types.includes("text/html"));
+      if (!item) {
+        rec("decode:none", { label, types: items.map((i) => i.types) });
+        return "no text/html on the clipboard";
+      }
+      const html = await item.getType("text/html").then((b) => b.text());
+      const match = html.match(/data-tulip-clipboard="([^"]+)"/);
+      if (!match) {
+        rec("decode:none", { label, html: clipStr(html) });
+        return "no data-tulip-clipboard payload";
+      }
+      const payload = JSON.parse(atob(match[1]));
+      rec("decode", { label, payload });
+      console.log("[tpa] decoded", label, payload);
+      return payload;
+    } catch (err) {
+      rec("decode:failed", { label, error: String(err) });
+      return "failed: " + String(err);
+    }
+  };
+
+  // Structural dump of a trigger list / context pane, for working out where a
+  // "Paste trigger" button can be injected and how a section names itself.
+  // Run it with the surface open: __tpaPane('step triggers').
+  window.__tpaPane = (label = "pane", root = null) => {
+    const start =
+      (typeof root === "string" ? document.querySelector(root) : root) ||
+      document.querySelector('[class*="context-pane"], [data-testid^="context-pane"]') ||
+      document.querySelector('[class*="triggers"]');
+    if (!start) {
+      rec("pane:none", { label });
+      return "no pane found — pass a selector: __tpaPane('label', '.some-selector')";
+    }
+    const lines = [];
+    (function walk(el, depth) {
+      if (depth > 7 || lines.length > 400) return;
+      const testid = el.getAttribute("data-testid");
+      const cls = (el.getAttribute("class") || "").split(/\s+/)[0] || "";
+      const own = [...el.childNodes]
+        .filter((n) => n.nodeType === 3)
+        .map((n) => n.textContent.trim())
+        .join(" ")
+        .slice(0, 50);
+      lines.push(
+        "  ".repeat(depth) +
+          el.tagName.toLowerCase() +
+          (testid ? "[" + testid + "]" : "") +
+          (cls ? "." + cls : "") +
+          (own ? " — " + own : ""),
+      );
+      for (const child of el.children) walk(child, depth + 1);
+    })(start, 0);
+    const text = lines.join("\n");
+    rec("pane", { label, tree: clipStr(text) });
+    console.log("[tpa] pane " + label + "\n" + text);
+    return text;
+  };
+
   window.__tpaReport = () => {
     const report = {
       meta: {
@@ -353,7 +423,8 @@
 
   // The subset worth sending back: everything that carries a payload or marks
   // where a paste stopped. Drops clicks, keydowns and storage chatter.
-  const DUMP_TAGS = /^(clipboard\.|event:(copy|cut|paste)|DataTransfer\.getData|console\.|note)/;
+  const DUMP_TAGS =
+    /^(clipboard\.|event:(copy|cut|paste)|DataTransfer\.getData|console\.|note|decode|pane)/;
   window.__tpaDump = () => {
     const json = JSON.stringify(
       {
