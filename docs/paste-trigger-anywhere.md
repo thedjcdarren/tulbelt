@@ -183,6 +183,48 @@ trigger record being unportable.
 conditions and actions, with no back-reference to the widget. Which is why a
 rewrite is plausible at all: change the binding, keep the clauses.
 
+### The event vocabulary
+
+Harvested from a live app (27 triggers across the app- and step-level lists):
+
+| Trigger list        | `event.type`    | `event.args`                          | `stepId` | `widgetId` |
+| ------------------- | --------------- | ------------------------------------- | -------- | ---------- |
+| App started         | `app-start`     | —                                     | null     | null       |
+| App completed       | `app-complete`  | —                                     | null     | null       |
+| App cancelled       | `app-cancel`    | —                                     | null     | null       |
+| On step enter       | `step-open`     | —                                     | set      | null       |
+| On step exit        | `step-closed`   | —                                     | set      | null       |
+| Timers              | `interval`      | `{ interval: 30 }`                    | set      | null       |
+| Machines & devices  | `device-output` | `{ driver, event }`                   | set      | null       |
+| Component (button)  | `button-press`  | —                                     | set      | set        |
+
+**One record shape, three binding levels.** App-level triggers have neither
+`stepId` nor `widgetId`; step-level triggers have `stepId`; component triggers
+have both. Nothing else about the record changes between surfaces — which
+settles strategy A over B: patch the binding, keep everything else.
+
+**`event.id` is the slot, not the trigger.** Two triggers sitting in the same
+list share one `event.id` — a trigger and its copy both carry the same id for
+that step's step-open. So the id identifies the event
+_slot_ on that step, not the individual trigger, and a rewrite must use the
+**target slot's** id rather than inventing one. Where to get it: any existing
+trigger in the destination list already carries it, and that is exactly what an
+injected paste button can read from its own section. (Unless Tulip re-derives
+`event` from the destination anyway, as it appears to for components — the
+bundle grep should say.)
+
+**Two lists need `args`.** Pasting into Timers means supplying
+`{ interval: <seconds> }`, and into Machines & devices `{ driver, event }`. A
+trigger arriving from any other surface has neither. Both are editable in the
+trigger editor that opens, so the button can seed a plausible default (or leave
+it empty) and let the user set it before saving — but it must be deliberate,
+not omitted by accident.
+
+**Preserve keys we don't understand.** `haltOnError` shows up on app-start,
+app-complete, app-cancel, step-open and step-closed triggers but not on
+`interval` or `device-output`. The rewrite patches named fields and copies the
+rest through untouched, so a field like this survives without us modelling it.
+
 ### Which hypothesis was right
 
 Of the three shapes this could have taken, the first is what Tulip does:
@@ -333,30 +375,31 @@ read is a trusted `paste` event on the `text/html` flavor, the payload _is_ read
 on a refused paste, refusal is silent, and the owner binding in the payload is
 `trigger.event.type`.
 
+Also answered: the event vocabulary for the app- and step-level surfaces, and
+that all three binding levels share one record shape (see
+[the vocabulary table](#the-event-vocabulary)).
+
 Still open:
 
-1. **The event vocabulary per surface.** `button-press` is the only value seen.
-   What is in `event` for App started / completed / cancelled, On step enter,
-   On step exit, Timers, Machines & devices, and a custom widget's declared
-   event? Without these the buttons have nothing to write. (One decode per
-   surface, or the bundle grep.)
-2. **How the surfaces differ structurally.** Does a step trigger serialize as
-   the same record with `widgetId` absent, an app trigger with neither
-   `stepId` nor `widgetId`? Or are they different records? (Strategy A vs B.)
-3. **What routes the paste.** Does Tulip's handler decide the destination from
-   the payload, or from editor selection state? This decides whether the
-   injected buttons can drive Tulip's own paste path (route 1) or need the
-   `getData` wrapper (route 2).
-4. **What the guard actually refuses.** With component→component working, the
+1. **The custom widget event.** What `event` does a trigger on a custom widget
+   carry — a `type` naming the widget's declared event, or a generic type with
+   the event in `args`? And does the payload name the widget _type_ anywhere,
+   which would explain why custom-widget-to-custom-widget is refused while
+   component-to-component is not. (Harvest with a custom widget selected.)
+2. **What routes the paste, and whether `event` survives it.** Does Tulip's
+   handler take the destination from the payload or from editor state, and does
+   it re-derive `event` from the destination (as the component case suggests) or
+   trust the payload's? If it re-derives, the rewrite gets much smaller: set the
+   binding level and let Tulip fill the slot.
+3. **What the guard actually refuses.** With component→component working, the
    predicate is about surfaces, not widget types — the grep should show it
    literally.
-5. Do two different custom widget types differ only by the widget-declared
-   `event.id`, or does the payload name the widget type somewhere?
-6. **Where the buttons go.** The DOM of each trigger list section: App
-   started/completed/cancelled, the four step lists, and a custom widget's event
-   sections — enough of a selector to inject one button per section and to read
-   which section it is.
-7. Does **Save** accept a cross-surface trigger once the editor opens, or is
+4. **Where the buttons go.** The DOM of each trigger list section, enough for a
+   selector that injects one button per section and reads which section it is.
+   The harvest showed the section headings are exactly the list names
+   ("App started", "Timers", "Machines & devices", …), so the heading is a
+   usable key — but the injection point still needs a real DOM dump.
+5. Does **Save** accept a cross-surface trigger once the editor opens, or is
    there a second gate server-side? (The one question that can end this feature.)
 
 ## Running the probe
