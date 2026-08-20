@@ -375,7 +375,20 @@
       }
       const payload = JSON.parse(atob(match[1]));
       rec("decode", { label, payload });
-      console.log("[tpa] decoded", label, payload);
+      // Log the binding as a string, not an object — the console collapses
+      // nested objects and `event` is exactly what gets hidden.
+      const t = payload.trigger || {};
+      console.log(
+        "[tpa] decoded " +
+          label +
+          " → " +
+          JSON.stringify({
+            name: t.name,
+            event: t.event,
+            stepId: t.stepId ?? null,
+            widgetId: t.widgetId ?? null,
+          }),
+      );
       return payload;
     } catch (err) {
       rec("decode:failed", { label, error: String(err) });
@@ -384,6 +397,48 @@
       }
       return "failed: " + String(err);
     }
+  };
+
+  // Every decode so far, flattened to the fields that matter: the event
+  // vocabulary in one blob. `copy(__tpaEvents())` is what to send back.
+  window.__tpaEvents = () => {
+    const rows = entries
+      .filter((e) => e.tag === "decode")
+      .map((e) => {
+        const t = (e.data.payload && e.data.payload.trigger) || {};
+        return {
+          label: e.data.label,
+          name: t.name,
+          clipboardType: e.data.payload && e.data.payload.clipboardType,
+          event: t.event,
+          stepId: t.stepId ?? null,
+          widgetId: t.widgetId ?? null,
+          // Anything else that varies by surface shows up here.
+          otherKeys: Object.keys(t).filter(
+            (k) =>
+              ![
+                "id",
+                "name",
+                "versionSetId",
+                "importFamilyId",
+                "appVersionId",
+                "stepId",
+                "widgetId",
+                "disabled",
+                "workspaces",
+                "created",
+                "lastModified",
+                "clauses",
+                "event",
+              ].includes(k),
+          ),
+        };
+      });
+    const json = JSON.stringify(rows, null, 2)
+      .split(location.hostname)
+      .join("your-instance.tulip.co");
+    console.log(json);
+    return json;
   };
 
   // Structural dump of a trigger list / context pane, for working out where a
