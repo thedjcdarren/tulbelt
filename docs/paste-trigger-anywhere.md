@@ -197,6 +197,18 @@ Harvested from a live app (27 triggers across the app- and step-level lists):
 | Timers              | `interval`      | `{ interval: 30 }`                    | set      | null       |
 | Machines & devices  | `device-output` | `{ driver, event }`                   | set      | null       |
 | Component (button)  | `button-press`  | —                                     | set      | set        |
+| Custom widget       | `custom-widget-event` | — (see below)                   | set      | set        |
+
+The custom widget event is the only one that names anything outside itself:
+
+```jsonc
+"event": {
+  "id": "<slot id>",
+  "type": "custom-widget-event",
+  "eventName": "<id of an event this widget type declares>",
+  "customWidgetId": "<the custom widget TYPE id>"
+}
+```
 
 **One record shape, three binding levels.** App-level triggers have neither
 `stepId` nor `widgetId`; step-level triggers have `stepId`; component triggers
@@ -219,6 +231,38 @@ trigger arriving from any other surface has neither. Both are editable in the
 trigger editor that opens, so the button can seed a plausible default (or leave
 it empty) and let the user set it before saving — but it must be deliberate,
 not omitted by accident.
+
+### Why each refusal happens — the leading explanation
+
+Put the vocabulary next to what works and a simpler story appears than "a guard
+compares surfaces":
+
+Every built-in component has **exactly one** event. A button fires
+`button-press`, an input fires its change, a table fires its row select — so
+when a trigger is pasted onto a selected component, Tulip can derive the
+destination event with no ambiguity, and does (which is why a `button-press`
+trigger lands happily on a table). The refusals are the cases where that
+derivation has no answer:
+
+- **Custom widget → different custom widget.** The event carries `eventName` and
+  `customWidgetId`, both belonging to the _source_ widget type. The destination
+  type declares its own set, possibly several, and nothing says which one the
+  trigger should become. No canonical choice, so no paste.
+- **App- and step-level lists.** Paste is aimed by canvas selection, and these
+  lists are not on the canvas. There may be no "guard" refusing them at all —
+  they are simply unreachable, because there is nothing to select that means
+  "the Timers list of this step".
+
+If that is right, the feature is less about defeating a check and more about
+**supplying the answer Tulip cannot derive**: a button in a specific list names
+its own event outright — `interval` for Timers, `app-start` for App started,
+this widget type's `eventName` + `customWidgetId` for that custom widget
+section. That is the same conclusion the buttons were already pointing at, but
+it means the payload rewrite may be the whole mechanism, with no guard to work
+around.
+
+The bundle grep is what confirms or kills this. If instead there is an explicit
+surface comparison in the paste path, the rewrite has to satisfy that too.
 
 **Preserve keys we don't understand.** `haltOnError` shows up on app-start,
 app-complete, app-cancel, step-open and step-closed triggers but not on
@@ -381,11 +425,14 @@ that all three binding levels share one record shape (see
 
 Still open:
 
-1. **The custom widget event.** What `event` does a trigger on a custom widget
-   carry — a `type` naming the widget's declared event, or a generic type with
-   the event in `args`? And does the payload name the widget _type_ anywhere,
-   which would explain why custom-widget-to-custom-widget is refused while
-   component-to-component is not. (Harvest with a custom widget selected.)
+1. **Where the destination's ids come from when the list is empty.** A paste
+   button needs the destination's `event.id` (the slot) and, for a custom
+   widget, `eventName` + `customWidgetId`. An existing trigger in that section
+   carries all of them — but a section with no triggers yet carries nothing, and
+   that is the common case for this feature. Either Tulip re-derives them
+   (question 2, which would make this moot), or they have to come from the app
+   definition in the page (React fiber / store, the
+   `expression-editor-fuzzy-main` pattern).
 2. **What routes the paste, and whether `event` survives it.** Does Tulip's
    handler take the destination from the payload or from editor state, and does
    it re-derive `event` from the destination (as the component case suggests) or
