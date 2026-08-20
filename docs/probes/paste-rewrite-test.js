@@ -14,22 +14,26 @@
 // How it works:
 //   * hooks Clipboard.write to capture the payload of your next copy click —
 //     no clipboard read, so no focus or permission trouble
-//   * rewrites `trigger.event` to the class you name and dispatches a paste
-//     event carrying it, entering Tulip's dispatcher at the same door a real
-//     paste does
-//   * watches Tulip's own [Copy/Paste] log lines and the paste API call to see
-//     what happened
+//   * rewrites the binding — `trigger.event` AND the stepId/widgetId pair the
+//     dispatcher appears to classify on — then dispatches a paste carrying it,
+//     entering Tulip's dispatcher at the same door a real paste does
+//   * reads the verdict off the paste API call's status and response body.
+//     NOT off the console: Tulip's logger holds a console reference taken
+//     before this script loads, so its lines never reach a late hook.
 //
 // Usage:
 //   __pasteTest.arm()                       // then click a trigger row's copy icon
-//   __pasteTest.show()                      // what was captured
-//   __pasteTest.tryAs('button-press')       // select a widget first
-//   __pasteTest.tryAs('step-open')          // lands in the current step's list
+//   __pasteTest.show()                      // what was captured, and its class
+//   __pasteTest.tryAs('button-press', { widgetId: '<target widget>' })
+//   __pasteTest.tryAs('step-open', { stepId: '<target step>' })
 //   __pasteTest.tryAs('app-start')
-//   __pasteTest.tryAs('interval', { args: { interval: 30 } })
-//   __pasteTest.tryAs('custom-widget-event', { eventName: '…', customWidgetId: '…' })
+//   __pasteTest.tryAs('interval', { stepId: '…', args: { interval: 30 } })
+//   __pasteTest.tryAs('custom-widget-event', { widgetId: '…', eventName: '…', customWidgetId: '…' })
 //   copy(__pasteTest.report())
 //   __pasteTest.stop()                      // remove every hook
+//
+// Omitted ids fall back to the copied trigger's own, which is right when the
+// destination is in the step you copied from and wrong otherwise.
 
 (() => {
   if (window.__pasteTest) {
@@ -128,12 +132,15 @@
 
   // ── watch the paste API call ──────────────────────────────────────────────
   const RELEVANT = /paste|trigger/i;
+  // OpenTelemetry spans mention every URL the page touches, including /paste.
+  const TELEMETRY = /telemetry|\/traces/i;
 
   const originalFetch = window.fetch;
   window.fetch = async function (input, init, ...rest) {
     const url = typeof input === "string" ? input : input && input.url;
     const body = init && typeof init.body === "string" ? init.body : null;
-    const interesting = RELEVANT.test(String(url)) || (body && RELEVANT.test(body));
+    const interesting =
+      !TELEMETRY.test(String(url)) && (RELEVANT.test(String(url)) || (body && RELEVANT.test(body)));
     const response = await originalFetch.call(this, input, init, ...rest);
     if (interesting) {
       let text = null;
@@ -144,6 +151,7 @@
         url: String(url).slice(0, 300),
         status: response.status,
         ok: response.ok,
+        isPasteApi: /\/paste(\?|$)/.test(String(url)),
         requestBody: body ? body.slice(0, 2000) : null,
         responseBody: text ? text.slice(0, 2000) : null,
       });
@@ -155,6 +163,20 @@
     window.fetch = originalFetch;
   });
 
+  // The response body is where the server explains a refusal, and it is not
+  // always text: reading .responseText throws outright when responseType is
+  // "blob", which is how Tulip's API client asks for it.
+  async function readXhrBody(xhr) {
+    try {
+      if (xhr.responseType === "" || xhr.responseType === "text") return xhr.responseText;
+      if (xhr.responseType === "json") return JSON.stringify(xhr.response);
+      if (xhr.response && typeof xhr.response.text === "function") return await xhr.response.text();
+      return "(responseType: " + xhr.responseType + ")";
+    } catch (err) {
+      return "(unreadable: " + String(err) + ")";
+    }
+  }
+
   const originalOpen = XMLHttpRequest.prototype.open;
   const originalSend = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.open = function (method, url, ...rest) {
@@ -165,16 +187,18 @@
   XMLHttpRequest.prototype.send = function (body) {
     const url = String(this.__testUrl || "");
     const bodyText = typeof body === "string" ? body : null;
-    if (RELEVANT.test(url) || (bodyText && RELEVANT.test(bodyText))) {
-      this.addEventListener("loadend", () => {
+    if (!TELEMETRY.test(url) && (RELEVANT.test(url) || (bodyText && RELEVANT.test(bodyText)))) {
+      this.addEventListener("loadend", async () => {
+        const responseBody = await readXhrBody(this);
         rec("xhr", {
           url: url.slice(0, 300),
           method: this.__testMethod,
           status: this.status,
-          requestBody: bodyText ? bodyText.slice(0, 2000) : null,
-          responseBody: String(this.responseText || "").slice(0, 2000),
+          isPasteApi: /\/paste(\?|$)/.test(url),
+          requestBody: bodyText ? bodyText.slice(0, 4000) : null,
+          responseBody: String(responseBody || "").slice(0, 4000),
         });
-        console.log("[test] paste-ish xhr", this.status, url.slice(0, 120));
+        console.log("[test] api", this.status, url.slice(0, 120), String(responseBody).slice(0, 300));
       });
     }
     return originalSend.call(this, body);
@@ -186,28 +210,72 @@
 
   // ── the rewrite ───────────────────────────────────────────────────────────
   // Keep every field Tulip's entry guards read (sourceCustomer, workspace,
-  // queryIds, recordPlaceholders) exactly as copied. Touch only trigger.event.
+  // queryIds, recordPlaceholders) exactly as copied. Touch the binding only:
+  // trigger.event, and the stepId/widgetId pair that decides which branch of
+  // the dispatcher the trigger takes.
   const NEEDS_ARGS = { interval: true, "device-output": true };
   const CUSTOM = "custom-widget-event";
 
-  function rewrite(payload, type, { eventName, customWidgetId, args } = {}) {
+  const EVENT_CLASS = {
+    "app-start": "app",
+    "app-complete": "app",
+    "app-cancel": "app",
+    "step-open": "step",
+    "step-closed": "step",
+    interval: "step",
+    "device-output": "step",
+    "machine-output": "step",
+    "button-press": "widget",
+    "custom-widget-event": "widget",
+    "input-change": "widget",
+    "input-exit": "widget",
+    "enter-press": "widget",
+    "row-select": "widget",
+    "signature-complete": "widget",
+  };
+
+  function rewrite(payload, type, opts = {}) {
+    const klass = EVENT_CLASS[type];
+    if (!klass) throw new Error("unknown event type: " + type);
+
     const next = JSON.parse(JSON.stringify(payload));
     const event = { id: next.trigger.event && next.trigger.event.id, type };
 
     if (type === CUSTOM) {
-      if (!eventName || !customWidgetId) {
+      if (!opts.eventName || !opts.customWidgetId) {
         throw new Error(
           "custom-widget-event needs { eventName, customWidgetId } from the TARGET widget",
         );
       }
-      event.eventName = eventName;
-      event.customWidgetId = customWidgetId;
+      event.eventName = opts.eventName;
+      event.customWidgetId = opts.customWidgetId;
     }
     if (NEEDS_ARGS[type]) {
-      event.args = args || (type === "interval" ? { interval: 30 } : {});
+      event.args = opts.args || (type === "interval" ? { interval: 30 } : {});
     }
     next.trigger.event = event;
+
+    // The dispatcher appears to classify by these two, not by event.type — an
+    // app trigger has neither, a step trigger has stepId only, a widget trigger
+    // has both. Set them to match the class the event now belongs to, so the
+    // branch taken and the event sent agree.
+    if (klass === "app") {
+      next.trigger.stepId = null;
+      next.trigger.widgetId = null;
+    } else if (klass === "step") {
+      next.trigger.stepId = opts.stepId ?? next.trigger.stepId ?? next.sourceStepId ?? null;
+      next.trigger.widgetId = null;
+    } else {
+      next.trigger.stepId = opts.stepId ?? next.trigger.stepId ?? next.sourceStepId ?? null;
+      next.trigger.widgetId = opts.widgetId ?? next.trigger.widgetId ?? null;
+    }
     return next;
+  }
+
+  function classOf(trigger) {
+    if (trigger.widgetId != null) return "widget (widgetId set)";
+    if (trigger.stepId != null) return "step (stepId set, no widgetId)";
+    return "app (neither id set)";
   }
 
   // ── dispatching a paste Tulip will pick up ────────────────────────────────
@@ -241,7 +309,13 @@
       if (!captured) return "nothing captured yet — run __pasteTest.arm() and click a copy icon";
       const t = captured.payload.trigger;
       return JSON.stringify(
-        { name: t.name, event: t.event, stepId: t.stepId ?? null, widgetId: t.widgetId ?? null },
+        {
+          name: t.name,
+          event: t.event,
+          stepId: t.stepId ?? null,
+          widgetId: t.widgetId ?? null,
+          dispatcherSeesThisAs: classOf(t),
+        },
         null,
         2,
       );
@@ -262,27 +336,40 @@
       const dispatch = dispatchPaste(html);
       console.log("[test] dispatched paste as", type, dispatch);
 
-      await wait(3000);
+      await wait(3500);
 
+      // The verdict comes from the paste API call, not from the console:
+      // Tulip's logger holds its own console reference taken before this script
+      // loaded, so its lines never reach our hook.
       const since = log.slice(before);
-      const opened = since.some((e) => /opening trigger editor/i.test(e.data.message || ""));
-      const failed = since.some(
-        (e) => e.tag === "tulip.error" || /error|failed|not recognized/i.test(e.data.message || ""),
-      );
-      const api = since.filter((e) => e.tag === "fetch" || e.tag === "xhr");
+      const pasteCalls = since.filter((e) => (e.tag === "xhr" || e.tag === "fetch") && e.data.isPasteApi);
+      const call = pasteCalls[pasteCalls.length - 1];
 
-      const verdict = opened
-        ? "ACCEPTED — trigger created and editor opened"
-        : failed
-          ? "REFUSED — see the log below"
-          : dispatch.defaultPrevented
-            ? "UNCLEAR — Tulip consumed the event but logged nothing"
-            : "IGNORED — Tulip never handled the synthetic paste (see notes in the header)";
+      let verdict;
+      if (!call) {
+        verdict = dispatch.defaultPrevented
+          ? "NO API CALL — Tulip handled the paste but bailed before calling the server " +
+            "(usually: the branch it chose had no target — e.g. the widget branch with nothing selected)"
+          : "IGNORED — Tulip never handled the synthetic paste; try __pasteTest.button(…)";
+      } else if (call.data.status >= 200 && call.data.status < 300) {
+        verdict = "ACCEPTED — the server created the trigger (status " + call.data.status + ")";
+      } else {
+        verdict =
+          "REFUSED by the server — status " +
+          call.data.status +
+          " — " +
+          String(call.data.responseBody || "").slice(0, 300);
+      }
 
-      attempts.push({ type, options, verdict, entries: since });
+      attempts.push({
+        type,
+        options,
+        verdict,
+        sentAs: { event: payload.trigger.event, class: classOf(payload.trigger) },
+        entries: since,
+      });
       console.log("[test] " + verdict);
-      for (const e of since) console.log("   ", e.tag, JSON.stringify(e.data).slice(0, 400));
-      if (api.length) console.log("[test] api calls:", api.length);
+      for (const e of since) console.log("   ", e.tag, JSON.stringify(e.data).slice(0, 600));
       return verdict;
     },
 

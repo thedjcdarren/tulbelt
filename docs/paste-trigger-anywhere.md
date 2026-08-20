@@ -375,6 +375,55 @@ app-complete, app-cancel, step-open and step-closed triggers but not on
 `interval` or `device-output`. The rewrite patches named fields and copies the
 rest through untouched, so a field like this survives without us modelling it.
 
+### What the first rewrite attempt proved
+
+Four attempts with
+[`probes/paste-rewrite-test.js`](./probes/paste-rewrite-test.js), rewriting only
+`trigger.event.type` and dispatching a synthetic paste:
+
+| Attempt                       | Result                                     |
+| ----------------------------- | ------------------------------------------ |
+| step trigger → `button-press` | dispatcher ran, **paste API returned 422** |
+| button trigger → `step-open`  | dispatcher ran, **no API call at all**     |
+| button trigger → `app-start`  | dispatcher ran, no API call                |
+| button trigger → `interval`   | dispatcher ran, no API call                |
+
+**The synthetic paste works.** Every attempt produced Tulip's own "Pasting
+trigger in app editor" line and left the event `defaultPrevented: true`. A
+`ClipboardEvent` built in the page enters the dispatcher exactly like a real
+one — no trusted event required, and no clipboard write needed either. The
+interception approach is sound.
+
+**The dispatcher classifies on `stepId` / `widgetId`, not on `event.type`.**
+That is the correction. A step trigger rewritten to `button-press` still took
+the **step** branch — it kept `stepId` set and `widgetId` null — and called the
+API with `target: { type: Step }` carrying a widget-class event. The server
+refused that pairing with **422 Unprocessable Content**, which is what a schema
+validator returns when a record and its target disagree. Conversely, a button
+trigger rewritten to `step-open` still took the **widget** branch, which needs
+`getCurrentWidget()`; with nothing selected it bailed before reaching the API —
+exactly the "no API call" result.
+
+So the binding is a **pair**, and both halves have to move together:
+
+| Destination | `stepId`    | `widgetId`    | `event.type` |
+| ----------- | ----------- | ------------- | ------------ |
+| App level   | null        | null          | app class    |
+| Step list   | target step | null          | step class   |
+| Component   | target step | target widget | widget class |
+
+The 422 is therefore **not** evidence that the server refuses cross-surface
+triggers. It is evidence that the server validates the record against the
+target, and that the first attempt sent an inconsistent pair. Whether a
+_consistent_ rewritten pair is accepted is still open — and is precisely what
+the next round tests.
+
+**Measurement note.** Tulip's clientLogger holds a `console` reference captured
+at startup, so a console hook installed later never sees its lines — the first
+version of the test reported "logged nothing" while the log was plainly on
+screen. It now takes its verdict from the paste API call's status and response
+body, which is the better signal anyway: it carries the server's own reason.
+
 ### Which hypothesis was right
 
 Of the three shapes this could have taken, the first is what Tulip does:
