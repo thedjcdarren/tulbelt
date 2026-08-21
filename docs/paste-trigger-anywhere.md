@@ -661,6 +661,16 @@ the record is created by the paste itself.
 The toggle ships `developerOnly: true`. Each of these is a reason it stays that
 way, in priority order:
 
+0. **The committed probe was stale, and it cost a test round.** After the
+   browser round corrected the record shape, that fix went into the toggle but
+   not into `probes/paste-rewrite-test.js`, which kept setting the ids to `null`
+   and omitting `haltOnError`. A later session used the probe to test app- and
+   step-class destinations, got no API call at all, and correctly reported it as
+   a refusal — it was the codec rejecting the stale shape before any request.
+   Widget-class rows passed in the same run because that branch sets real ids.
+   The probe now matches the toggle. **Any negative result about app- or
+   step-class destinations from before that fix should be re-run.**
+
 1. **Does a moved trigger actually fire?** Persistence is proven; runtime
    behaviour is not. Open a scratch app in the Player and confirm that a button
    trigger moved to App started fires on app start, and a step-enter trigger
@@ -682,13 +692,23 @@ way, in priority order:
    case can be keyed to a widget type or a heading string — two different custom
    widget types were observed sharing an identical `eventName` id.
 
-3. **Widget and custom-widget destinations are not offered.** The mechanism is
-   proven for both — rows 1 and 8 — but a button in those lists needs the
-   destination widget's id, and for a custom widget the section's `eventName`
-   and `customWidgetId`. There is no verified way to read them from the DOM yet;
-   [`probes/widget-target-probe.js`](./probes/widget-target-probe.js) is the
-   hunt for them. This is the largest remaining gap in coverage: it is what
-   "paste a step trigger onto a button" needs.
+3. **Flat widget panels have nowhere to put a button.** A widget with a single
+   event — a button — renders its triggers as a flat list with no section
+   heading, so there is no `triggerGroupStyles` element to attach to. Sectioned
+   components (a text input's "On enter press" / "On input exit") and every
+   custom widget event section work, because those do have sections. Finding the
+   container element of a flat list is the last DOM detail needed.
+
+4. **Widget and custom-widget destinations are now offered**, via a rule found
+   with [`probes/widget-target-probe.js`](./probes/widget-target-probe.js) and
+   confirmed with two `201` pastes: from any `triggerGroupStyles` section,
+   climbing `fiber.return` reaches a component carrying `widgetId`, and for a
+   custom widget one carrying `customWidgetId`; the section's own event is
+   `props.group.types[0]` — a `TriggerEventTypes` string for a built-in section,
+   a custom widget's event id for a custom one. Verified across a button, a text
+   input and two custom widgets, so the id is not component-specific. A paste
+   using a section's own event id landed in that exact section (End Action, not
+   Loop Action) on a widget declaring three events.
 4. **A non-custom-widget event landing on a custom widget** is untested, and is
    probably the one unread branch of `validateAndRemap`. Run
    `await __grep(["triggerToPaste"], 2500)` and test it before offering custom

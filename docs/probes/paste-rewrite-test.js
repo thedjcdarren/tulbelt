@@ -255,19 +255,27 @@
     }
     next.trigger.event = event;
 
-    // The dispatcher appears to classify by these two, not by event.type — an
-    // app trigger has neither, a step trigger has stepId only, a widget trigger
-    // has both. Set them to match the class the event now belongs to, so the
-    // branch taken and the event sent agree.
+    // The dispatcher classifies by these, not by event.type — an app trigger
+    // has neither id, a step trigger has stepId only, a widget trigger has
+    // both. Two details matter and both were learned the hard way:
+    //
+    //   * the ids must be ABSENT, not null. A null fails Tulip's own client
+    //     codec ("Clipboard content was not valid AppClipboardContent") and no
+    //     request is made at all — which looks exactly like a silent refusal.
+    //   * `haltOnError` is carried by app- and step-class records and NOT by
+    //     widget-class ones, so it moves with the class.
     if (klass === "app") {
-      next.trigger.stepId = null;
-      next.trigger.widgetId = null;
+      delete next.trigger.stepId;
+      delete next.trigger.widgetId;
+      next.trigger.haltOnError = true;
     } else if (klass === "step") {
-      next.trigger.stepId = opts.stepId ?? next.trigger.stepId ?? next.sourceStepId ?? null;
-      next.trigger.widgetId = null;
+      next.trigger.stepId = opts.stepId || next.trigger.stepId || next.sourceStepId;
+      delete next.trigger.widgetId;
+      next.trigger.haltOnError = true;
     } else {
-      next.trigger.stepId = opts.stepId ?? next.trigger.stepId ?? next.sourceStepId ?? null;
-      next.trigger.widgetId = opts.widgetId ?? next.trigger.widgetId ?? null;
+      next.trigger.stepId = opts.stepId || next.trigger.stepId || next.sourceStepId;
+      next.trigger.widgetId = opts.widgetId || next.trigger.widgetId;
+      delete next.trigger.haltOnError;
     }
     return next;
   }

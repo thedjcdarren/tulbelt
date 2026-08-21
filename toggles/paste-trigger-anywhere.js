@@ -16,11 +16,17 @@
 // toggle to <html data-tulbelt-pta-enabled> for the main-world half, which is
 // where the clipboard payload can actually be seen.
 //
-// Sections deliberately NOT offered yet: widget and custom-widget lists. Those
-// need the destination widget's id — and, for a custom widget, the section's
-// eventName and customWidgetId — and there is no verified way to read them from
-// the DOM yet. The mechanism is proven for both; the ids are the gap. See
-// docs/paste-trigger-anywhere.md.
+// Sections come in two kinds. App- and step-level lists have fixed headings, so
+// this half names their event outright. Anything else is a widget or custom
+// widget panel: those sections carry their own event and the destination
+// widget's id in React props, invisible from this world, so they are marked
+// "auto" and the main-world half reads them at click time. That is what makes
+// the feature general — a component type or custom widget nobody has built yet
+// works the same way, with nothing keyed to a type or a heading string.
+//
+// Still missing: a widget whose trigger list is FLAT (a button — one event, no
+// section headings) has no section element to hang a button on. That needs one
+// more anchor; see docs/paste-trigger-anywhere.md.
 //
 // "Machines & devices" IS offered, but is the one destination never tested
 // end to end. A device-output event carries `args: { driver, event }` naming a
@@ -40,6 +46,7 @@
   const BUTTON_ATTR = "data-tulbelt-pta-paste";
   const STEP_ATTR = "data-tulbelt-pta-step";
   const CLAIMED_ATTR = "data-tulbelt-pta-claimed";
+  const GROUP_MARK = "data-tulbelt-pta-group";
   const STYLE_ID = "tulbelt-paste-trigger-anywhere-styles";
   const RESULT_EVENT = "tulbelt:pta-result";
 
@@ -66,7 +73,15 @@
 
   // Which destinations need the current step's id in the payload to classify
   // as step-level. App-class destinations carry no ids at all.
-  const STEP_CLASS = new Set(["step-open", "step-closed", "interval"]);
+  const STEP_CLASS = new Set(["step-open", "step-closed", "interval", "device-output"]);
+
+  // The headings above that belong to a step. Used to tell a genuinely unknown
+  // heading (a widget panel — resolve it at click time) from a known step
+  // heading whose step id we could not find (offer nothing rather than paste
+  // into the wrong step).
+  const STEP_CLASS_HEADINGS = new Set(
+    Object.keys(DESTINATIONS).filter((h) => STEP_CLASS.has(DESTINATIONS[h])),
+  );
 
   const CSS = `
     button[${BUTTON_ATTR}] {
@@ -123,18 +138,33 @@
 
   function addButton(group) {
     if (group.getAttribute(CLAIMED_ATTR) === "1") return;
+    const heading = group.querySelector(HEADING_SEL);
+    if (!heading) return;
     const destination = destinationFor(group);
-    if (!destination) return;
+
+    // A heading we don't recognize is a widget or custom-widget panel. Those
+    // sections name their own event and the destination widget's id lives only
+    // in React props, so they are marked "auto" and the main-world half
+    // resolves them at click time — which is what makes this work for any
+    // component and any custom widget, including ones that don't exist yet.
+    // The exception is a heading we DO recognize as step-level but whose step
+    // id we couldn't find: offering that would paste into the wrong step.
+    if (!destination && STEP_CLASS_HEADINGS.has(normalizeHeading(heading.textContent))) return;
+
+    const type = destination ? destination.type : "auto";
+    const stepId = destination ? destination.stepId : null;
+
     group.setAttribute(CLAIMED_ATTR, "1");
+    group.setAttribute(GROUP_MARK, "1");
 
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = "Paste trigger";
-    button.setAttribute(BUTTON_ATTR, destination.type);
-    if (destination.stepId) button.setAttribute(STEP_ATTR, destination.stepId);
+    button.setAttribute(BUTTON_ATTR, type);
+    if (stepId) button.setAttribute(STEP_ATTR, stepId);
     // The main-world half listens for clicks on this element directly — the
     // DOM is shared between worlds even though the JS environments are not.
-    destination.heading.appendChild(button);
+    heading.appendChild(button);
   }
 
   function scan() {
@@ -146,6 +176,9 @@
     for (const el of document.querySelectorAll("[" + BUTTON_ATTR + "]")) el.remove();
     for (const el of document.querySelectorAll("[" + CLAIMED_ATTR + "]")) {
       el.removeAttribute(CLAIMED_ATTR);
+    }
+    for (const el of document.querySelectorAll("[" + GROUP_MARK + "]")) {
+      el.removeAttribute(GROUP_MARK);
     }
   }
 
