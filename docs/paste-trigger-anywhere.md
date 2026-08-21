@@ -3,12 +3,14 @@
 Working notes for a planned toggle that lets a copied trigger be pasted onto an
 owner Tulip currently refuses.
 
-Status: **built, developer-only.** The mechanism is proven against a live
-instance — all nine cross-surface pastes returned `201`, appeared in their
-destination lists, kept their actions and survived a hard reload — and the
-toggle ships as `paste-trigger-anywhere`. It stays behind developer mode until
-someone confirms a moved trigger actually **fires** in the Player; see
-[Before this leaves developer mode](#before-this-leaves-developer-mode).
+Status: **built and working, developer-only while coverage is finished.** The
+mechanism is proven end to end against a live instance: cross-surface pastes
+return `201`, land in their destination lists, keep their actions, survive a
+hard reload — and **a moved trigger fires**. A button trigger moved to App
+started showed its message on app start, and one moved to Timers fired on the
+interval, both confirmed in the Player. That was the question that could have
+killed the feature, and it is answered. What remains is coverage, not
+correctness; see [Remaining coverage](#remaining-coverage).
 
 The sections below are the investigation in the order it happened, so earlier
 ones describe models that later ones correct. Where they disagree,
@@ -256,11 +258,16 @@ That is the line the feature is trying to cross, and it is drawn in Tulip's own
 type definitions. It also explains component-to-component cleanly: every
 component event is in one class, so moving between them never leaves it.
 
-Two event types carry extra fields, and the codecs spell out exactly what:
+Two event types carry extra fields, and the codecs spell out exactly what. Note
+the combinators: the bundle uses one helper for **intersection** and a different
+one for **union** — `device-output`'s args are an intersection, so `driver` and
+`event` are both **required** and `machine` is the only optional part. (Reading
+that as a union is what made the first Machines & devices attempt send `{}` and
+get rejected by the codec before any request.)
 
 ```
 custom-widget-event : { type, id, eventName, customWidgetId }
-device-output       : { type, id, args: { driver, event } | { machine? } }
+device-output       : { type, id, args: { driver, event } & { machine? } }
 interval            : { type, id, args: { interval … } }
 everything else     : { type, id }
 ```
@@ -656,10 +663,11 @@ survives a reload, and a custom-widget trigger can move to a **different**
 custom widget type. There is no second gate at Save because there is no Save —
 the record is created by the paste itself.
 
-## Before this leaves developer mode
+## Remaining coverage
 
-The toggle ships `developerOnly: true`. Each of these is a reason it stays that
-way, in priority order:
+The toggle ships `developerOnly: true` while these are finished. None of them is
+a doubt about the mechanism — that is settled — they are destinations that don't
+work yet:
 
 0. **The committed probe was stale, and it cost a test round.** After the
    browser round corrected the record shape, that fix went into the toggle but
@@ -671,16 +679,20 @@ way, in priority order:
    The probe now matches the toggle. **Any negative result about app- or
    step-class destinations from before that fix should be re-run.**
 
-1. **Does a moved trigger actually fire?** Persistence is proven; runtime
-   behaviour is not. Open a scratch app in the Player and confirm that a button
-   trigger moved to App started fires on app start, and a step-enter trigger
-   moved onto a button fires on press. **A trigger that is stored but never
-   fires is a negative result and this should not ship.**
-2. **Machines & devices is offered but untested.** Its payload _was_ captured
-   in the harvest — `args: { driver, event }` — and the codec's second branch
-   makes every arg optional, so a trigger arriving from another surface is sent
-   with `args: {}` for the user to fill in. That empty-args path has never been
-   through the server. Test it before anything else here.
+1. ~~Does a moved trigger actually fire?~~ **Yes** — verified in the Player for
+   a button trigger moved to App started (message appeared on app start,
+   reproduced on a second run) and one moved to Timers (fired on the interval;
+   note Tulip enforces a 30-second floor). The pasted trigger opens with the
+   destination's When already set, keeps its action, and is auto-named
+   `(Copy)`.
+2. **Machines & devices sends a borrowed device output — untested.** The first
+   attempt sent `args: {}` and was refused by Tulip's own clipboard codec
+   ("Clipboard content was not valid AppClipboardContent") before any request:
+   the args are an **intersection**, so `driver` and `event` are both required.
+   It now borrows a real pairing from a trigger already in that section, read
+   out of the section's React props, and reports "Needs an existing device
+   trigger" when the section is empty rather than sending something invalid.
+   Neither path has been tested yet.
    **Built-in components need only `widgetId`, whatever their type.** Tulip's
    own paste path re-derives the event type for a component destination — it
    remaps a `button-press` onto whatever the target component actually fires —

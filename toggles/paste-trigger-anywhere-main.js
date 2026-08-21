@@ -115,15 +115,61 @@
     return found;
   }
 
+  // A device-output event's args are an INTERSECTION in Tulip's codec, not a
+  // union: `driver` and `event` are both required (only `machine` is optional).
+  // So a trigger arriving from another surface cannot be sent with empty args —
+  // the codec rejects the whole payload before any request. The one honest
+  // source of a real pairing is a trigger already sitting in that section, so
+  // we look for one and borrow its device output; the user re-points it in the
+  // editor that opens.
+  function findDeviceArgs(value, depth) {
+    if (!value || typeof value !== "object" || depth > 6) return null;
+    if (typeof value.driver === "string" && typeof value.event === "string") {
+      return { driver: value.driver, event: value.event };
+    }
+    if (Array.isArray(value)) {
+      for (const item of value.slice(0, 40)) {
+        const hit = findDeviceArgs(item, depth + 1);
+        if (hit) return hit;
+      }
+      return null;
+    }
+    for (const key of Object.keys(value)) {
+      if (key === "return" || key === "stateNode" || key === "_owner") continue;
+      const hit = findDeviceArgs(value[key], depth + 1);
+      if (hit) return hit;
+    }
+    return null;
+  }
+
+  function borrowDeviceArgs(group) {
+    let fiber = fiberOf(group);
+    let depth = 0;
+    while (fiber && depth < MAX_CLIMB) {
+      const hit = findDeviceArgs(fiber.memoizedProps, 0);
+      if (hit) return hit;
+      fiber = fiber.return;
+      depth++;
+    }
+    return null;
+  }
+
   // What to paste as, for a section the isolated half could not name from its
   // heading — i.e. a widget or custom widget panel. Returns null when the page
   // doesn't tell us enough, so nothing is pasted on a guess.
   function resolveDestination(button) {
     const declared = button.getAttribute(BUTTON_ATTR);
     // App- and step-level sections are named by their heading and need nothing
-    // from the page.
+    // from the page — except a device output, which has to be borrowed.
     if (declared && declared !== "auto") {
-      return { type: declared, opts: { stepId: button.getAttribute(STEP_ATTR) || null } };
+      const opts = { stepId: button.getAttribute(STEP_ATTR) || null };
+      if (declared === "device-output") {
+        const group = button.closest("[" + GROUP_MARK + "]");
+        const args = group && borrowDeviceArgs(group);
+        if (!args) return { error: "Needs an existing device trigger" };
+        opts.args = args;
+      }
+      return { type: declared, opts };
     }
 
     const group = button.closest("[" + GROUP_MARK + "]");
@@ -239,12 +285,15 @@
       event.customWidgetId = opts.customWidgetId;
     }
     if (NEEDS_ARGS[type]) {
-      // A trigger already of this type brings its own configuration; anything
-      // else gets a starting value the user adjusts in the editor that opens.
-      event.args =
-        opts.args ||
-        (sourceEvent.type === type && sourceEvent.args) ||
-        (type === "interval" ? { interval: 30 } : {});
+      // A trigger already of this type brings its own configuration; otherwise
+      // the caller supplies one. An interval can be defaulted because its only
+      // arg is a number, but a device output names a real driver and event and
+      // Tulip's codec requires both — there is nothing safe to invent.
+      const args =
+        opts.args || (sourceEvent.type === type && sourceEvent.args) ||
+        (type === "interval" ? { interval: 30 } : null);
+      if (!args) throw new Error("no args for " + type);
+      event.args = args;
     }
     trigger.event = event;
 
@@ -317,8 +366,8 @@
     e.stopPropagation();
 
     const destination = resolveDestination(button);
-    if (!destination) {
-      report(button, false, "Can't read target");
+    if (!destination || !destination.type) {
+      report(button, false, (destination && destination.error) || "Can't read target");
       return;
     }
 

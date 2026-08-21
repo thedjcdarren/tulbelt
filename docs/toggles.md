@@ -46,10 +46,16 @@ The button names the destination: it rewrites the payload's binding — the
 `haltOnError` — and hands the result to Tulip's own paste path via a synthetic
 `ClipboardEvent`. Everything else in the payload is passed through as copied.
 
+Widget and custom-widget sections work too: those name their own event and
+carry the destination widget's id in React props, so the main-world half reads
+both at click time rather than keying off a widget type or a heading string — a
+custom widget nobody has built yet needs no code change. A widget whose trigger
+list is flat, with no section heading (a button), has nowhere to put a button
+yet.
+
 Note that Tulip creates the pasted trigger **on paste**, server-side, before the
 trigger editor opens — there is no save to confirm it, so an unwanted paste is a
-real record to delete. Machines & devices, widget and custom-widget
-destinations are deliberately not offered yet. Deep dive:
+real record to delete. Deep dive:
 [paste-trigger-anywhere.md](./paste-trigger-anywhere.md).
 
 ### Visual filters editor — `filters-builder` · **default: on**
