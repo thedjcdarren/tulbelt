@@ -90,24 +90,63 @@
     Object.keys(DESTINATIONS).filter((h) => STEP_CLASS.has(DESTINATIONS[h])),
   );
 
+  // Tulip's own icon buttons are a bare 19px Material glyph on a transparent
+  // background (see the "+" this sits beside), so match that rather than
+  // introducing a bordered control into the row.
   const CSS = `
     button[${BUTTON_ATTR}] {
-      margin-left: 8px;
-      padding: 2px 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 2px;
+      padding: 2px;
+      background: transparent;
+      border: 0;
+      border-radius: 3px;
+      color: inherit;
       font: inherit;
       font-size: 11px;
-      line-height: 18px;
-      color: inherit;
-      background: transparent;
-      border: 1px solid currentColor;
-      border-radius: 3px;
-      opacity: 0.55;
+      line-height: 1;
+      opacity: 0.65;
       cursor: pointer;
       vertical-align: middle;
     }
     button[${BUTTON_ATTR}]:hover { opacity: 1; }
-    button[${BUTTON_ATTR}][disabled] { cursor: default; opacity: 0.4; }
+    button[${BUTTON_ATTR}] svg { display: block; width: 19px; height: 19px; fill: currentColor; }
+    button[${BUTTON_ATTR}][disabled] { cursor: default; opacity: 1; }
   `;
+
+  // Material glyphs on the same 24x24 viewBox Tulip's own icons use.
+  const ICONS = {
+    paste:
+      "M19 2h-4.18C14.4.84 13.3 0 12 0c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm7 18H5V4h2v3h10V4h2v16z",
+    done: "M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z",
+  };
+
+  const LABEL = "Paste trigger";
+
+  function setIcon(button, kind) {
+    button.textContent = "";
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", ICONS[kind]);
+    svg.appendChild(path);
+    button.appendChild(svg);
+  }
+
+  function createPasteButton(type, stepId) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute(BUTTON_ATTR, type);
+    if (stepId) button.setAttribute(STEP_ATTR, stepId);
+    // Icon-only, so the name lives in aria-label and the native tooltip.
+    button.setAttribute("aria-label", LABEL);
+    button.title = LABEL;
+    setIcon(button, "paste");
+    return button;
+  }
 
   let active = false;
   let observer = null;
@@ -164,14 +203,9 @@
     group.setAttribute(CLAIMED_ATTR, "1");
     group.setAttribute(GROUP_MARK, "1");
 
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = "Paste trigger";
-    button.setAttribute(BUTTON_ATTR, type);
-    if (stepId) button.setAttribute(STEP_ATTR, stepId);
     // The main-world half listens for clicks on this element directly — the
     // DOM is shared between worlds even though the JS environments are not.
-    heading.appendChild(button);
+    heading.appendChild(createPasteButton(type, stepId));
   }
 
   // A widget with a single event — a button — has no section headings to hang a
@@ -187,14 +221,10 @@
     section.setAttribute(CLAIMED_ATTR, "1");
     section.setAttribute(GROUP_MARK, "1");
 
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = "Paste trigger";
     // "auto": the main-world half reads the widget's id from React props at
     // click time. A flat panel names no event, so it pastes as a generic
     // widget event and Tulip re-derives the real one from the component.
-    button.setAttribute(BUTTON_ATTR, "auto");
-
+    const button = createPasteButton("auto", null);
     const host = addButtonEl.closest("[data-istarget]") || addButtonEl;
     host.parentElement.insertBefore(button, host);
   }
@@ -224,11 +254,21 @@
     } catch (_) {}
     const button = e.target && e.target.nodeType === 1 ? e.target : null;
     if (!detail || !button || !button.hasAttribute(BUTTON_ATTR)) return;
-    const original = "Paste trigger";
-    button.textContent = detail.ok ? "Pasted" : detail.error || "Paste failed";
     button.disabled = true;
+    if (detail.ok) {
+      button.title = "Pasted";
+      setIcon(button, "done");
+    } else {
+      // An icon can't carry a reason, and a tooltip the user has to hover for
+      // is no use for something that just happened — so a refusal shows its
+      // text and reverts to the icon.
+      const message = detail.error || "Paste failed";
+      button.title = message;
+      button.textContent = message;
+    }
     setTimeout(() => {
-      button.textContent = original;
+      button.title = LABEL;
+      setIcon(button, "paste");
       button.disabled = false;
     }, 2200);
   }
