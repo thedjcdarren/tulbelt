@@ -24,16 +24,17 @@
 // the feature general — a component type or custom widget nobody has built yet
 // works the same way, with nothing keyed to a type or a heading string.
 //
-// Still missing: a widget whose trigger list is FLAT (a button — one event, no
-// section headings) has no section element to hang a button on. That needs one
-// more anchor; see docs/paste-trigger-anywhere.md.
+// A widget with a single event — a button — renders no section headings at all,
+// so its panel gets one button beside the "Triggers" heading instead, next to
+// Tulip's own "+". That panel names no event, which is exactly right: it pastes
+// as a generic widget event and Tulip re-derives the component's real one.
 //
-// "Machines & devices" IS offered, but is the one destination never tested
-// end to end. A device-output event carries `args: { driver, event }` naming a
-// specific device output; a trigger arriving from another surface has no such
-// pairing, so it is sent with empty args (which Tulip's codec permits — its
-// second branch makes every arg optional) for the user to fill in in the
-// editor that opens.
+// "Machines & devices" is the one destination that cannot be built from the
+// copied trigger alone: its event names a real driver and device event, and
+// Tulip's codec requires both. So the main-world half borrows that pairing from
+// a trigger already in the section and the user re-points it in the editor;
+// where the section is empty, the button says so rather than sending a payload
+// the codec will reject.
 
 (() => {
   const { addedNodesObserver, ensureStyles, removeStyles } = window.__tulbeltLib;
@@ -56,6 +57,12 @@
   // Tulip's own CSS-module class names; readable, not hashed.
   const GROUP_SEL = '[class*="triggerGroupStyles"]';
   const HEADING_SEL = '[class*="triggerHeaderLabel"]';
+
+  // The context pane's whole Triggers section, and the "+" beside its heading.
+  // Both are testids rather than the hashed styled-component classes around
+  // them, so they are the stable hooks for a panel that has no sections at all.
+  const SECTION_SEL = '[data-testid="triggers section"]';
+  const ADD_BUTTON_SEL = '[data-testid="context-pane-add-trigger"]';
 
   // Section heading -> the event type a trigger must carry to land there.
   // Only destinations with an observed payload are listed.
@@ -167,9 +174,35 @@
     heading.appendChild(button);
   }
 
+  // A widget with a single event — a button — has no section headings to hang a
+  // button off, so its panel gets one beside the "Triggers" heading instead.
+  // Only when the panel really has no sections: where sections exist they each
+  // carry their own button and a header one would be ambiguous.
+  function addPanelButton(section) {
+    if (section.getAttribute(CLAIMED_ATTR) === "1") return;
+    if (section.querySelector(GROUP_SEL)) return;
+    const addButtonEl = section.querySelector(ADD_BUTTON_SEL);
+    if (!addButtonEl) return;
+
+    section.setAttribute(CLAIMED_ATTR, "1");
+    section.setAttribute(GROUP_MARK, "1");
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Paste trigger";
+    // "auto": the main-world half reads the widget's id from React props at
+    // click time. A flat panel names no event, so it pastes as a generic
+    // widget event and Tulip re-derives the real one from the component.
+    button.setAttribute(BUTTON_ATTR, "auto");
+
+    const host = addButtonEl.closest("[data-istarget]") || addButtonEl;
+    host.parentElement.insertBefore(button, host);
+  }
+
   function scan() {
     if (!active) return;
     for (const group of document.querySelectorAll(GROUP_SEL)) addButton(group);
+    for (const section of document.querySelectorAll(SECTION_SEL)) addPanelButton(section);
   }
 
   function removeButtons() {
@@ -205,7 +238,7 @@
     active = true;
     ensureStyles(STYLE_ID, CSS);
     document.addEventListener(RESULT_EVENT, onResult, true);
-    observer = addedNodesObserver(GROUP_SEL, scan);
+    observer = addedNodesObserver(GROUP_SEL + ", " + SECTION_SEL, scan);
     observer.start();
     scan();
   }

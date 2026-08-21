@@ -704,12 +704,18 @@ work yet:
    case can be keyed to a widget type or a heading string — two different custom
    widget types were observed sharing an identical `eventName` id.
 
-3. **Flat widget panels have nowhere to put a button.** A widget with a single
-   event — a button — renders its triggers as a flat list with no section
-   heading, so there is no `triggerGroupStyles` element to attach to. Sectioned
-   components (a text input's "On enter press" / "On input exit") and every
-   custom widget event section work, because those do have sections. Finding the
-   container element of a flat list is the last DOM detail needed.
+3. **Flat widget panels are handled at the panel header.** A widget with a
+   single event — a button — renders no section headings, so there is no
+   `triggerGroupStyles` element to attach to. Its panel instead gets one button
+   beside the "Triggers" heading, next to Tulip's own "+", anchored on
+   `[data-testid="triggers section"]` and
+   `[data-testid="context-pane-add-trigger"]` — testids rather than the hashed
+   styled-component classes around them. It is added only when the section
+   contains no groups, so a panel that does have sections keeps its per-section
+   buttons and gains no ambiguous header one.
+
+   Such a panel names no event, which is correct: it pastes as a generic widget
+   event and Tulip re-derives the component's real one. Untested.
 
 4. **Widget and custom-widget destinations are now offered**, via a rule found
    with [`probes/widget-target-probe.js`](./probes/widget-target-probe.js) and
