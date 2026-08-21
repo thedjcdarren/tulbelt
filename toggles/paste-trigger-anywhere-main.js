@@ -104,6 +104,13 @@
         if (!found.customWidgetId && typeof props.customWidgetId === "string") {
           found.customWidgetId = props.customWidgetId;
         }
+        if (props.group && window.__ptaDebug) {
+          // The whole prop, not just types[0] — if a section turns out not to
+          // name its event type, whatever else it carries is the next lead.
+          try {
+            debug("group prop @" + depth, JSON.stringify(props.group).slice(0, 600));
+          } catch (_) {}
+        }
         if (!found.sectionEvent && props.group && Array.isArray(props.group.types)) {
           const first = props.group.types[0];
           if (typeof first === "string") found.sectionEvent = first;
@@ -112,7 +119,46 @@
       fiber = fiber.return;
       depth++;
     }
+    debug("section props", found);
     return found;
+  }
+
+  // Built-in component sections, by the label Tulip puts on them. Used only
+  // when the section's React props don't name their own event type: the
+  // built-in event vocabulary is closed and these are Tulip's own labels for
+  // it, so this is a narrow, checkable fallback rather than a general rule.
+  // (Custom widgets never come through here — their event is an id that no
+  // label could supply, and a section that can't produce one pastes nothing.)
+  const WIDGET_HEADINGS = {
+    "on enter press": "enter-press",
+    "on input exit": "input-exit",
+    "on input change": "input-change",
+    "on value change": "input-change",
+    "on row select": "row-select",
+    "on row selected": "row-select",
+    "on signature complete": "signature-complete",
+    "on button press": "button-press",
+  };
+
+  function typeFromHeading(group) {
+    const heading = group.querySelector('[class*="triggerHeaderLabel"]');
+    if (!heading) return null;
+    const text = String(heading.textContent || "")
+      .replace(/\s+/g, " ")
+      .replace(/\(\d+\)\s*$/, "")
+      .trim()
+      .toLowerCase();
+    return WIDGET_HEADINGS[text] || null;
+  }
+
+  // Set window.__ptaDebug = true in the page console to see what a click
+  // resolved and what it sent — the only way to tell a section that named its
+  // own event from one that was guessed.
+  function debug(label, data) {
+    if (!window.__ptaDebug) return;
+    try {
+      console.log("[tulbelt:pta] " + label, data);
+    } catch (_) {}
   }
 
   // A device-output event's args are an INTERSECTION in Tulip's codec, not a
@@ -189,11 +235,16 @@
       };
     }
 
-    // A built-in component. If the section names its own event type, use it —
-    // that is what tells "On enter press" from "On input exit" on the same
-    // widget. Otherwise any widget-class type will do: Tulip re-derives the
-    // event from the destination component itself.
-    const type = sectionEvent && EVENT_CLASS[sectionEvent] === "widget" ? sectionEvent : "button-press";
+    // A built-in component. The section's own event type is what tells "On
+    // enter press" from "On input exit" on the same widget, so it has to be
+    // named exactly — a generic widget event would be re-derived by Tulip into
+    // whichever event that component treats as its default, landing the trigger
+    // in the wrong section.
+    let type = sectionEvent && EVENT_CLASS[sectionEvent] === "widget" ? sectionEvent : null;
+    if (!type) type = typeFromHeading(group);
+    // Only when neither says which: fall back to a generic widget event and let
+    // Tulip choose. Right for a single-event component, a guess for any other.
+    if (!type) type = "button-press";
     return { type, opts: { widgetId, stepId } };
   }
 
@@ -391,6 +442,7 @@
       return;
     }
 
+    debug("pasting as", { destination, event: rewritten.trigger.event });
     const handled = dispatchPaste(encode(rewritten));
     // Tulip owns everything past this point: it creates the trigger through
     // its own API and opens the editor. A refusal surfaces as Tulip's own
