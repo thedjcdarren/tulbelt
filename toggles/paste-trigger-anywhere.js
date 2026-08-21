@@ -39,7 +39,6 @@
 
   const FEATURE_ID = "paste-trigger-anywhere";
   const STORAGE_KEY = "toggles";
-  const DEVELOPER_MODE_KEY = "developerMode";
 
   const ENABLED_ATTR = "data-tulbelt-pta-enabled";
   const BUTTON_ATTR = "data-tulbelt-pta-paste";
@@ -297,29 +296,24 @@
     } catch (_) {}
   }
 
-  // Developer-only for now: a paste creates a real trigger on the server the
-  // moment it happens (there is no Save to confirm it), and a moved trigger
-  // has not yet been observed FIRING in the Player. Read raw storage rather
-  // than registerToggle so developer mode gates it here too.
+  // Read raw storage rather than using registerToggle: this also has to mirror
+  // the state to <html> for the main-world half and re-check the editor path.
   async function syncFromStorage() {
     let stored = {};
-    let developerMode = false;
     try {
-      const raw = await chrome.storage.local.get([STORAGE_KEY, DEVELOPER_MODE_KEY]);
+      const raw = await chrome.storage.local.get(STORAGE_KEY);
       if (raw && typeof raw[STORAGE_KEY] === "object") stored = raw[STORAGE_KEY];
-      developerMode = raw[DEVELOPER_MODE_KEY] === true;
     } catch (_) {
       return;
     }
-    const next = stored[FEATURE_ID] === true && developerMode && EDITOR_PATH.test(location.pathname);
+    const next = stored[FEATURE_ID] === true && EDITOR_PATH.test(location.pathname);
     setFlag(next);
     if (next) enable();
     else disable();
   }
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== "local") return;
-    if (changes[STORAGE_KEY] || changes[DEVELOPER_MODE_KEY]) syncFromStorage();
+    if (area === "local" && changes[STORAGE_KEY]) syncFromStorage();
   });
 
   // The editor is a single-page app: the step (and therefore the step id the

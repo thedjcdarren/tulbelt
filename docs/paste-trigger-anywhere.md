@@ -3,14 +3,15 @@
 Working notes for a planned toggle that lets a copied trigger be pasted onto an
 owner Tulip currently refuses.
 
-Status: **built and working, developer-only while coverage is finished.** The
-mechanism is proven end to end against a live instance: cross-surface pastes
-return `201`, land in their destination lists, keep their actions, survive a
-hard reload — and **a moved trigger fires**. A button trigger moved to App
-started showed its message on app start, and one moved to Timers fired on the
-interval, both confirmed in the Player. That was the question that could have
-killed the feature, and it is answered. What remains is coverage, not
-correctness; see [Remaining coverage](#remaining-coverage).
+Status: **shipped, off by default.** The mechanism is proven end to end against
+a live instance: cross-surface pastes return `201`, land in their destination
+lists, keep their actions, survive a hard reload — and **a moved trigger
+fires**, confirmed in the Player for a button trigger moved to App started and
+another moved to Timers.
+
+A full sweep then ran **every destination against one source of every class —
+75 cells — and all 75 passed**: correct `When` everywhere, no refusals, no
+missing API calls. See [The stress run](#the-stress-run).
 
 The sections below are the investigation in the order it happened, so earlier
 ones describe models that later ones correct. Where they disagree,
@@ -707,88 +708,58 @@ device / timer / machine / step opened / step closed, and changing it genuinely
 moves the trigger between the Timers, Machines & devices and On step exit
 sections.
 
-## Remaining coverage
+## The stress run
 
-The toggle ships `developerOnly: true` while these are finished. None of them is
-a doubt about the mechanism — that is settled — they are destinations that don't
-work yet:
+Five sources — one per class: an app trigger (no ids), a step trigger
+(`stepId`), a **Timer** (carries `event.args`), a **button** (both ids), a
+custom widget trigger (`eventName` + `customWidgetId`) — against **every** paste
+destination: the three app lists, a step's four lists, a button's panel, a text
+input's two sections, an interactive table, and every event section of two
+_different_ custom widget types. 75 cells, every one `201`.
 
-0. **The committed probe was stale, and it cost a test round.** After the
-   browser round corrected the record shape, that fix went into the toggle but
-   not into `probes/paste-rewrite-test.js`, which kept setting the ids to `null`
-   and omitting `haltOnError`. A later session used the probe to test app- and
-   step-class destinations, got no API call at all, and correctly reported it as
-   a refusal — it was the codec rejecting the stale shape before any request.
-   Widget-class rows passed in the same run because that branch sets real ids.
-   The probe now matches the toggle. **Any negative result about app- or
-   step-class destinations from before that fix should be re-run.**
+What it establishes beyond "it works":
 
-1. ~~Does a moved trigger actually fire?~~ **Yes** — verified in the Player for
-   a button trigger moved to App started (message appeared on app start,
-   reproduced on a second run) and one moved to Timers (fired on the interval;
-   note Tulip enforces a 30-second floor). The pasted trigger opens with the
-   destination's When already set, keeps its action, and is auto-named
-   `(Copy)`.
-2. **Machines & devices pastes with the device unset — untested.** The first
-   attempt sent `args: {}` and was refused by Tulip's own clipboard codec
-   ("Clipboard content was not valid AppClipboardContent") before any request:
-   the args are an **intersection**, so the `driver` and `event` keys are both
-   required. But required *keys* is not the same as meaningful values — both are
-   string codecs, and `""` is a string — so `{ driver: "", event: "" }` should
-   validate where an empty object did not, and leave the pickers blank for the
-   user to fill in.
+- **The `When` is the destination's, whatever the source.** All five sources
+  produce the same `When` at a given destination — the source really does
+  contribute only its clauses.
+- **Custom widget sections don't bleed.** Widget B's three sections received
+  triggers carrying three distinct `eventName`s, each matching the icon that was
+  clicked, including when the source was a _different_ custom widget type whose
+  `eventName` had to be replaced rather than carried.
+- **`args` stay where they belong.** Timers got `{ interval: 30 }` on all five
+  including sources with no args at all; Machines & devices got
+  `{ driver: "", event: "" }`; the other eleven destinations got none. The Timer
+  source's args never appeared anywhere else.
+- **Actions survive**, including a two-action source arriving with both actions
+  in order.
+- **Machines & devices works unset.** Accepted with empty-string args, the
+  driver picker opens and populates the device-output control, and switching the
+  `When` from device to machine in the same editor works. It does not arrive
+  pointing at another trigger's device.
 
-   That is better than the alternative it replaced (borrowing the pairing from
-   another trigger in the section), which produced a valid trigger pointing at
-   *some other device* — wrong in a way the user might not notice, and useless
-   when the section is empty. An unset picker is visibly unfinished. The
-   step-level When also spans device and machine, so a user who meant a machine
-   trigger can switch there. Untested: whether the server accepts empty strings,
-   and how the editor renders them.
-   **Built-in components need only `widgetId`, whatever their type.** Tulip's
-   own paste path re-derives the event type for a component destination — it
-   remaps a `button-press` onto whatever the target component actually fires —
-   so one code path covers every built-in component type, including ones that
-   ship in later Tulip releases. Custom widgets are the exception, because Tulip
-   refuses to guess among the events a widget declares: each section's own
-   `eventName` has to be read from the page, and a widget declaring three events
-   renders three sections needing three different values. Nothing about either
-   case can be keyed to a widget type or a heading string — two different custom
-   widget types were observed sharing an identical `eventName` id.
+One wording note: the doc's expected `When` for Machines & devices was "a device
+output"; the option's literal text is `device`, with the driver as a separate
+control beside it. Cosmetic.
 
-3. **Flat widget panels are handled at the panel header.** A widget with a
-   single event — a button — renders no section headings, so there is no
-   `triggerGroupStyles` element to attach to. Its panel instead gets one button
-   beside the "Triggers" heading, next to Tulip's own "+", anchored on
-   `[data-testid="triggers section"]` and
-   `[data-testid="context-pane-add-trigger"]` — testids rather than the hashed
-   styled-component classes around them. It is added only when the section
-   contains no groups, so a panel that does have sections keeps its per-section
-   buttons and gains no ambiguous header one.
+## Residual risk
 
-   Such a panel names no event, which is correct: it pastes as a generic widget
-   event and Tulip re-derives the component's real one. Untested.
+Small and named, rather than unknown:
 
-4. **Widget and custom-widget destinations are now offered**, via a rule found
-   with [`probes/widget-target-probe.js`](./probes/widget-target-probe.js) and
-   confirmed with two `201` pastes: from any `triggerGroupStyles` section,
-   climbing `fiber.return` reaches a component carrying `widgetId`, and for a
-   custom widget one carrying `customWidgetId`; the section's own event is
-   `props.group.types[0]` — a `TriggerEventTypes` string for a built-in section,
-   a custom widget's event id for a custom one. Verified across a button, a text
-   input and two custom widgets, so the id is not component-specific. A paste
-   using a section's own event id landed in that exact section (End Action, not
-   Loop Action) on a widget declaring three events.
-4. **A non-custom-widget event landing on a custom widget** is untested, and is
-   probably the one unread branch of `validateAndRemap`. Run
-   `await __grep(["triggerToPaste"], 2500)` and test it before offering custom
-   widget destinations.
-5. **Form triggers** are explicitly refused by the dispatcher and are not
-   offered. Untested, and there is no reason to push on it.
-6. **Cross-step pasting is not attempted.** Every step-class row used the open
-   step's id, and the dispatcher targets the current step regardless. A paste
-   button always sits in the surface it targets, so this stays moot — don't
-   design around it.
+1. **Four unobserved section spellings.** `input-change`, `row-select`,
+   `signature-complete` and `button-press` have never been seen in their
+   underscore form, because the widgets carrying them were single-section
+   everywhere they were checked — and a single-section widget doesn't need the
+   name, since Tulip re-derives the event. If one of them is irregular the way
+   `input_enter` was, it would only matter on a **multi-section** widget of that
+   kind, and it would present as a paste landing in the wrong section rather
+   than as an error.
+2. **Form triggers** are refused by Tulip's own dispatcher and are not offered as
+   a destination. A form trigger used as a _source_ was never tested.
+3. **Cross-step pasting** is not attempted and shouldn't be relied on: a paste
+   button always sits in the surface it targets.
+4. **Actions that referenced the old owner** are left exactly as copied, visible
+   in the editor for the user to fix. That is deliberate — the alternative is
+   silently rewriting someone's logic.
 
 ## Running the probe
 

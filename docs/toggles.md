@@ -30,10 +30,9 @@ as before. The heaviest feature in the extension: a two-world (isolated + MAIN)
 script pair that reads Tulip's full suggestion catalog from React fibers. Deep
 dive: [expression-editor-fuzzy-main.md](./expression-editor-fuzzy-main.md).
 
-### Paste trigger anywhere — `paste-trigger-anywhere` · **default: off** · **developer-only**
+### Paste trigger anywhere — `paste-trigger-anywhere` · **default: off**
 
-Hidden from the popup unless developer mode is on. Adds a paste icon beside
-every trigger list heading — App started / Completed / Cancelled, a step's On
+Adds a paste icon beside every trigger list heading — App started / Completed / Cancelled, a step's On
 step enter / On step exit / Timers / Machines & devices, and a widget's or
 custom widget's own event sections — so a copied trigger can be pasted onto a
 surface Ctrl+V cannot reach: a button trigger onto App started, a step trigger

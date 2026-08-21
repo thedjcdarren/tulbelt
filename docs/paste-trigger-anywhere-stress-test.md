@@ -4,6 +4,10 @@ For an agent driving real Chrome against a real Tulip instance. Every bug found
 in this feature so far lived in a *specific* source/destination pair and was
 found by a user hitting it. This is the sweep that should find the rest first.
 
+**Last run: 75/75 cells passed** — every destination against one source of every
+class, all `201`, correct `When` throughout, no refusals. Re-run this after any
+change to the rewrite or to how a destination is resolved.
+
 Background: [paste-trigger-anywhere.md](./paste-trigger-anywhere.md).
 Harness: [`probes/paste-stress.js`](./probes/paste-stress.js).
 Repo: `thedjcdarren/tulbelt`, branch `claude/magical-mayer-ub5m6z`.
