@@ -30,6 +30,35 @@ as before. The heaviest feature in the extension: a two-world (isolated + MAIN)
 script pair that reads Tulip's full suggestion catalog from React fibers. Deep
 dive: [expression-editor-fuzzy-main.md](./expression-editor-fuzzy-main.md).
 
+### Paste trigger anywhere — `paste-trigger-anywhere` · **default: off**
+
+Adds a paste icon beside every trigger list heading — App started / Completed / Cancelled, a step's On
+step enter / On step exit / Timers / Machines & devices, and a widget's or
+custom widget's own event sections — so a copied trigger can be pasted onto a
+surface Ctrl+V cannot reach: a button trigger onto App started, a step trigger
+onto a widget, a custom widget's trigger onto a different custom widget.
+
+Tulip's paste dispatcher picks its destination from the copied trigger's own
+binding (no ids → app level, `stepId` → current step, `widgetId` → selected
+widget), so there is nothing to aim Ctrl+V at for the app- and step-level lists.
+The button names the destination: it rewrites the payload's binding — the
+`event`, the `stepId`/`widgetId` pair (which must be **absent**, not null), and
+`haltOnError` — and hands the result to Tulip's own paste path via a synthetic
+`ClipboardEvent`. Everything else in the payload is passed through as copied.
+
+Widget and custom-widget sections name their own event and carry the
+destination widget's id in React props, so the main-world half reads both at
+click time rather than keying off a widget type or a heading string — a custom
+widget nobody has built yet needs no code change. A widget with a single event
+renders no section headings at all, so its panel gets one icon beside the
+"Triggers" heading next to Tulip's own "+", which pastes as a generic widget
+event and lets Tulip re-derive the component's real one.
+
+Note that Tulip creates the pasted trigger **on paste**, server-side, before the
+trigger editor opens — there is no save to confirm it, so an unwanted paste is a
+real record to delete. Deep dive:
+[paste-trigger-anywhere.md](./paste-trigger-anywhere.md).
+
 ### Visual filters editor — `filters-builder` · **default: on**
 
 On connector function pages, replaces the JSON text box for the `filters` query
