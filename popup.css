@@ -229,7 +229,7 @@ ul#toggles::-webkit-scrollbar-thumb {
   text-overflow: ellipsis;
 }
 
-/* Info button + toggle, kept together at the right edge of the row */
+/* Info icon + toggle, kept together at the right edge of the row */
 .feature-controls {
   display: flex;
   align-items: center;
@@ -243,23 +243,13 @@ ul#toggles::-webkit-scrollbar-thumb {
   justify-content: center;
   width: 18px;
   height: 18px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: none;
   color: var(--muted);
-  cursor: pointer;
+  cursor: help;
   transition: color 0.12s ease;
 }
 
-.feature-info:hover,
-.feature-info[aria-expanded="true"] {
+.feature-info:hover {
   color: var(--accent);
-}
-
-.feature-info:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
 }
 
 .switch {
@@ -321,10 +311,4 @@ ul#toggles::-webkit-scrollbar-thumb {
   border-radius: 4px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
   pointer-events: none;
-}
-
-/* Click-opened tooltips are dismissible by clicking them */
-.tooltip.pinned {
-  pointer-events: auto;
-  cursor: pointer;
 }
