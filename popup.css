@@ -158,13 +158,17 @@ header .subtitle {
   cursor: pointer;
 }
 
-/* Bulk actions: text links that act on whatever the list is currently showing */
+/* Bulk actions: text links over the whole list, hidden while a search filters it */
 .bulk-actions {
   flex-shrink: 0;
   display: flex;
   gap: 12px;
   padding: 7px 14px;
   border-bottom: 1px solid var(--hairline);
+}
+
+.bulk-actions[hidden] {
+  display: none;
 }
 
 .bulk-actions button {
@@ -178,13 +182,8 @@ header .subtitle {
   cursor: pointer;
 }
 
-.bulk-actions button:hover:not(:disabled) {
+.bulk-actions button:hover {
   text-decoration: underline;
-}
-
-.bulk-actions button:disabled {
-  color: var(--muted);
-  cursor: default;
 }
 
 .bulk-actions button:focus-visible {
