@@ -1,6 +1,6 @@
 import {
   getDeveloperMode,
-  getPopupFeatureGroups,
+  getPopupFeatures,
   getToggles,
   setDeveloperMode,
   setToggle,
@@ -31,11 +31,6 @@ featureTemplate.innerHTML = `
       </span>
     </label>
   </li>
-`;
-
-const sectionTemplate = document.createElement("template");
-sectionTemplate.innerHTML = `
-  <li class="feature-section"><span class="feature-section-label"></span></li>
 `;
 
 const tooltip = document.getElementById("tooltip");
@@ -105,19 +100,11 @@ function bindInfoIcon(icon, checkbox, description) {
   checkbox.addEventListener("blur", hideTooltip);
 }
 
-function createSectionNode(title, sectionId) {
-  const node = sectionTemplate.content.firstElementChild.cloneNode(true);
-  node.querySelector(".feature-section-label").textContent = title;
-  node.dataset.section = sectionId;
-  return node;
-}
-
-function createFeatureNode(feature, enabled, sectionId) {
+function createFeatureNode(feature, enabled) {
   const node = featureTemplate.content.firstElementChild.cloneNode(true);
   node.querySelector(".feature-name").textContent = feature.name;
   node.dataset.featureId = feature.id;
   node.dataset.search = `${feature.name} ${feature.description}`.toLowerCase();
-  node.dataset.section = sectionId;
   const cb = node.querySelector("input");
   bindInfoIcon(node.querySelector(".feature-info"), cb, feature.description);
   cb.checked = enabled;
@@ -126,24 +113,9 @@ function createFeatureNode(feature, enabled, sectionId) {
 }
 
 function buildPopupFeatures(toggles, showDeveloperFeatures) {
-  const { major, more } = getPopupFeatureGroups({ showDeveloperFeatures });
-  const items = [];
-
-  if (major.length) {
-    items.push(createSectionNode("Major", "major"));
-    for (const feature of major) {
-      items.push(createFeatureNode(feature, toggles[feature.id], "major"));
-    }
-  }
-
-  if (more.length) {
-    items.push(createSectionNode("More", "more"));
-    for (const feature of more) {
-      items.push(createFeatureNode(feature, toggles[feature.id], "more"));
-    }
-  }
-
-  return items;
+  return getPopupFeatures({ showDeveloperFeatures }).map((feature) =>
+    createFeatureNode(feature, toggles[feature.id]),
+  );
 }
 
 // Only ever runs with the list unfiltered (the links hide during a search), so
@@ -174,14 +146,6 @@ function filterFeatures(query, list, noResults) {
     const show = !q || node.dataset.search.includes(q);
     node.hidden = !show;
     if (show) visibleFeatures++;
-  }
-
-  for (const section of list.querySelectorAll(".feature-section")) {
-    const sectionId = section.dataset.section;
-    const hasVisible = [...list.querySelectorAll(`.feature[data-section="${sectionId}"]`)].some(
-      (node) => !node.hidden,
-    );
-    section.hidden = !hasVisible;
   }
 
   noResults.hidden = visibleFeatures > 0;

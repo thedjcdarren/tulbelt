@@ -573,7 +573,6 @@ supplies an event type; Tulip supplies everything else.
   description:
     'In the app editor, add a "Paste trigger" button to every trigger list — App started/completed/cancelled, On step enter/exit, Timers, Machines & devices, and each custom widget event — so a copied trigger can be pasted across those surfaces instead of only onto a selected component. The trigger editor opens pre-filled as usual with the event set to the list you pasted into, and nothing is saved until you press Save.',
   defaultEnabled: false,
-  major: true,
 }
 ```
 

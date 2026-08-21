@@ -223,19 +223,6 @@ ul#toggles::-webkit-scrollbar-thumb {
   text-align: center;
 }
 
-.feature-section {
-  padding: 10px 9px 4px;
-  list-style: none;
-}
-
-.feature-section-label {
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--muted);
-}
-
 .feature label {
   display: flex;
   align-items: center;
