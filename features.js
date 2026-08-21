@@ -226,6 +226,15 @@ export const FEATURES = [
     major: true,
   },
   {
+    id: "paste-trigger-anywhere",
+    name: "Paste Trigger Anywhere",
+    description:
+      "In the app editor, add a “Paste trigger” button to the App started / App completed / App cancelled lists and to a step’s On step enter / On step exit / Timers lists, so a copied trigger can be pasted onto a surface Ctrl+V cannot reach — a button trigger onto App started, an On step enter trigger onto Timers, and so on. The trigger editor opens with the destination’s “When” already set. Note that Tulip creates the pasted trigger the moment you paste, before you save anything, so an unwanted paste is a real trigger you have to delete.",
+    defaultEnabled: false,
+    major: true,
+    developerOnly: true,
+  },
+  {
     id: "dev-tools",
     name: "Dev Tools (Agent Debugging)",
     description:

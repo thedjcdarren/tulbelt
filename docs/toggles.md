@@ -30,6 +30,28 @@ as before. The heaviest feature in the extension: a two-world (isolated + MAIN)
 script pair that reads Tulip's full suggestion catalog from React fibers. Deep
 dive: [expression-editor-fuzzy-main.md](./expression-editor-fuzzy-main.md).
 
+### Paste trigger anywhere — `paste-trigger-anywhere` · **default: off** · **developer-only**
+
+Hidden from the popup unless developer mode is on. Adds a "Paste trigger"
+button to the App started / App completed / App cancelled lists and to a step's
+On step enter / On step exit / Timers lists, so a copied trigger can be pasted
+onto a surface Ctrl+V cannot reach — a button trigger onto App started, a step
+trigger onto Timers, and so on.
+
+Tulip's paste dispatcher picks its destination from the copied trigger's own
+binding (no ids → app level, `stepId` → current step, `widgetId` → selected
+widget), so there is nothing to aim Ctrl+V at for the app- and step-level lists.
+The button names the destination: it rewrites the payload's binding — the
+`event`, the `stepId`/`widgetId` pair (which must be **absent**, not null), and
+`haltOnError` — and hands the result to Tulip's own paste path via a synthetic
+`ClipboardEvent`. Everything else in the payload is passed through as copied.
+
+Note that Tulip creates the pasted trigger **on paste**, server-side, before the
+trigger editor opens — there is no save to confirm it, so an unwanted paste is a
+real record to delete. Machines & devices, widget and custom-widget
+destinations are deliberately not offered yet. Deep dive:
+[paste-trigger-anywhere.md](./paste-trigger-anywhere.md).
+
 ### Visual filters editor — `filters-builder` · **default: on**
 
 On connector function pages, replaces the JSON text box for the `filters` query

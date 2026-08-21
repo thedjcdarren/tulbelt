@@ -3,11 +3,16 @@
 Working notes for a planned toggle that lets a copied trigger be pasted onto an
 owner Tulip currently refuses.
 
-Status: **research.** A probe run on a live instance settled how the copy/paste
-path works, where the guard sits, and what the clipboard payload contains — see
-[Confirmed by probe](#confirmed-by-probe). What is missing is the event-type
-vocabulary the rewrite has to write into; the remaining
-[open questions](#open-questions) are all about that.
+Status: **built, developer-only.** The mechanism is proven against a live
+instance — all nine cross-surface pastes returned `201`, appeared in their
+destination lists, kept their actions and survived a hard reload — and the
+toggle ships as `paste-trigger-anywhere`. It stays behind developer mode until
+someone confirms a moved trigger actually **fires** in the Player; see
+[Before this leaves developer mode](#before-this-leaves-developer-mode).
+
+The sections below are the investigation in the order it happened, so earlier
+ones describe models that later ones correct. Where they disagree,
+[The shape that works](#the-shape-that-works) is right.
 
 ## The actual gap
 
@@ -424,6 +429,60 @@ version of the test reported "logged nothing" while the log was plainly on
 screen. It now takes its verdict from the paste API call's status and response
 body, which is the better signal anyway: it carries the server's own reason.
 
+### The shape that works
+
+A browser session against a live instance ran the full matrix. **Every row was
+accepted with `201 Created`**, including a control row that pasted an unmodified
+payload to prove the synthetic event path itself:
+
+| Source          | Rewritten to                          | Destination      | Result |
+| --------------- | ------------------------------------- | ---------------- | ------ |
+| Button          | _unmodified_ (control)                | that button      | 201    |
+| On step enter   | `button-press` + target `widgetId`    | that button      | 201    |
+| Button          | `step-open` + current `stepId`        | that step        | 201    |
+| Button          | `app-start`                           | app level        | 201    |
+| On step enter   | `app-start`                           | app level        | 201    |
+| App started     | `step-open` + current `stepId`        | that step        | 201    |
+| On step enter   | `interval` + `args: { interval: 30 }` | Timers           | 201    |
+| Timer           | `step-closed` + current `stepId`      | On step exit     | 201    |
+| Custom widget A | `custom-widget-event` → **widget B, a different custom widget type** | widget B | 201 |
+
+Verified afterwards: each trigger is in its destination list, the editor opens
+with the destination's `When` already filled in, a `show-message` action
+survived the move intact, and **all of them are still there after a hard
+reload**. Pasted triggers are auto-named `<source> (Copy)`, so the toggle needs
+no naming logic.
+
+**Two fields the earlier model missed**, both of which fail Tulip's own
+client-side codec _before_ any request is made:
+
+1. **The ids must be absent, not `null`.** An app-class payload has no `stepId`
+   or `widgetId` key at all; a step-class one has `stepId` and no `widgetId`.
+   Setting them to `null` produces "Clipboard content was not valid
+   AppClipboardContent" and no API call. `delete` passes.
+2. **`haltOnError`.** App- and step-class records carry `haltOnError: true`;
+   widget-class records don't carry the key. It has to be added moving up to
+   step or app level and deleted moving down onto a widget.
+
+So the per-class record shape is:
+
+| Field         | App class | Step class | Widget class |
+| ------------- | --------- | ---------- | ------------ |
+| `stepId`      | absent    | string     | string       |
+| `widgetId`    | absent    | absent     | string       |
+| `haltOnError` | `true`    | `true`     | absent       |
+| `event.type`  | app class | step class | widget class |
+
+Everything else is identical across surfaces and is passed through exactly as
+copied — including the stale `event.id`, which names the _source's_ event slot
+and which the server does not mind.
+
+Two failure signatures are worth telling apart: no `/paste` call plus
+"not valid AppClipboardContent" means the codec rejected the shape (usually a
+`null` where a key should be absent), while a `/paste` that returns 4xx is the
+server, and its body names the field. The 422 from the earlier round was the
+second kind — an inconsistent (target, record) pair, exactly as suspected.
+
 ### Which hypothesis was right
 
 Of the three shapes this could have taken, the first is what Tulip does:
@@ -590,27 +649,43 @@ class), that Tulip re-derives `event.type` for widget targets itself, and that
 the only explicit refusals are the two custom-widget field comparisons and the
 form-trigger one.
 
-Still open:
+Answered by the browser round: the paste API **accepts** consistent
+cross-surface rewrites (all nine rows, `201`), the server does **not** mind a
+stale `event.id`, actions survive the move, the created trigger is real and
+survives a reload, and a custom-widget trigger can move to a **different**
+custom widget type. There is no second gate at Save because there is no Save —
+the record is created by the paste itself.
 
-1. **What the paste API accepts.** The client sends
-   `paste({ appVersionId, body: { target, triggers: [trigger], variables,
-   recordPlaceholders } })` and the server creates the record. A rewritten
-   payload produces a _consistent_ (target, trigger) pair — the same pairing a
-   native paste sends — so it has a good chance, but only an experiment settles
-   it. **This is the question that decides whether the toggle ships.**
-2. **Whether the server minds a stale `event.id`.** The slot id in a rewritten
-   payload belongs to the source's list. Tulip's own widget-branch remap leaves
-   `event.id` untouched while changing `event.type`, which suggests the server
-   does not key off it — but that is inference, not evidence.
-3. **The one unread check** in `validateAndRemap`, between the
-   widgets-in-step test and the `customWidgetId` comparison — almost certainly
-   "a non-custom-widget event may not land on a custom widget", which would
-   constrain pasting a button trigger onto a custom widget.
-4. **Where the buttons go.** The DOM of each trigger list section, enough for a
-   selector that injects one button per section and reads which section it is.
-   The harvest showed section headings are exactly the list names
-   ("App started", "Timers", "Machines & devices", …), so the heading is a
-   usable key — but the injection point still needs a real DOM dump.
+## Before this leaves developer mode
+
+The toggle ships `developerOnly: true`. Each of these is a reason it stays that
+way, in priority order:
+
+1. **Does a moved trigger actually fire?** Persistence is proven; runtime
+   behaviour is not. Open a scratch app in the Player and confirm that a button
+   trigger moved to App started fires on app start, and a step-enter trigger
+   moved onto a button fires on press. **A trigger that is stored but never
+   fires is a negative result and this should not ship.**
+2. **Machines & devices is not offered.** No payload from that list was ever
+   captured, so the shape of its `event.args` (driver, event, maybe machine) is
+   guesswork. Copy one, read its `event.args`, then add `"machines & devices"`
+   to `DESTINATIONS` in the isolated half.
+3. **Widget and custom-widget destinations are not offered.** The mechanism is
+   proven for both — rows 1 and 8 — but a button in those lists needs the
+   destination widget's id, and for a custom widget the section's `eventName`
+   and `customWidgetId`. There is no verified way to read them from the DOM yet.
+   This is the largest remaining gap in coverage: it is what "paste a step
+   trigger onto a button" needs.
+4. **A non-custom-widget event landing on a custom widget** is untested, and is
+   probably the one unread branch of `validateAndRemap`. Run
+   `await __grep(["triggerToPaste"], 2500)` and test it before offering custom
+   widget destinations.
+5. **Form triggers** are explicitly refused by the dispatcher and are not
+   offered. Untested, and there is no reason to push on it.
+6. **Cross-step pasting is not attempted.** Every step-class row used the open
+   step's id, and the dispatcher targets the current step regardless. A paste
+   button always sits in the surface it targets, so this stays moot — don't
+   design around it.
 
 ## Running the probe
 
