@@ -239,7 +239,21 @@
     if (!klass) throw new Error("unknown event type: " + type);
 
     const next = JSON.parse(JSON.stringify(payload));
-    const event = { id: next.trigger.event && next.trigger.event.id, type };
+    // `event.id` names an event SLOT, and a rewritten payload carries the
+    // source's. The server accepts that, but the trigger editor may populate
+    // its "When" dropdown from it — so make it switchable: pass eventId to use
+    // a specific slot (the destination's), or "random" for a fresh one. The
+    // codec requires the key, so it can never simply be omitted.
+    const sourceId = next.trigger.event && next.trigger.event.id;
+    const id =
+      opts.eventId === "random"
+        ? Array.from({ length: 17 }, () =>
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789".charAt(
+              Math.floor(Math.random() * 62),
+            ),
+          ).join("")
+        : opts.eventId || sourceId;
+    const event = { id, type };
 
     if (type === CUSTOM) {
       if (!opts.eventName || !opts.customWidgetId) {
