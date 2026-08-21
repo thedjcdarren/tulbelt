@@ -16,15 +16,18 @@
 // toggle to <html data-tulbelt-pta-enabled> for the main-world half, which is
 // where the clipboard payload can actually be seen.
 //
-// Sections deliberately NOT offered yet:
-//   * "Machines & devices" — its event.args shape (driver/event, maybe
-//     machine) has never been observed on a real payload, so we cannot build
-//     one honestly.
-//   * widget and custom-widget lists — those need the destination widget's id
-//     (and, for custom widgets, the section's eventName + customWidgetId), and
-//     there is no verified way to read them from the DOM yet.
-// Both are gaps in evidence, not in the mechanism; see
+// Sections deliberately NOT offered yet: widget and custom-widget lists. Those
+// need the destination widget's id — and, for a custom widget, the section's
+// eventName and customWidgetId — and there is no verified way to read them from
+// the DOM yet. The mechanism is proven for both; the ids are the gap. See
 // docs/paste-trigger-anywhere.md.
+//
+// "Machines & devices" IS offered, but is the one destination never tested
+// end to end. A device-output event carries `args: { driver, event }` naming a
+// specific device output; a trigger arriving from another surface has no such
+// pairing, so it is sent with empty args (which Tulip's codec permits — its
+// second branch makes every arg optional) for the user to fill in in the
+// editor that opens.
 
 (() => {
   const { addedNodesObserver, ensureStyles, removeStyles } = window.__tulbeltLib;
@@ -57,6 +60,8 @@
     "on step enter": "step-open",
     "on step exit": "step-closed",
     timers: "interval",
+    "machines & devices": "device-output",
+    "machines and devices": "device-output",
   };
 
   // Which destinations need the current step's id in the payload to classify

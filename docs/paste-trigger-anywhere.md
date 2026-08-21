@@ -666,16 +666,18 @@ way, in priority order:
    trigger moved to App started fires on app start, and a step-enter trigger
    moved onto a button fires on press. **A trigger that is stored but never
    fires is a negative result and this should not ship.**
-2. **Machines & devices is not offered.** No payload from that list was ever
-   captured, so the shape of its `event.args` (driver, event, maybe machine) is
-   guesswork. Copy one, read its `event.args`, then add `"machines & devices"`
-   to `DESTINATIONS` in the isolated half.
+2. **Machines & devices is offered but untested.** Its payload _was_ captured
+   in the harvest — `args: { driver, event }` — and the codec's second branch
+   makes every arg optional, so a trigger arriving from another surface is sent
+   with `args: {}` for the user to fill in. That empty-args path has never been
+   through the server. Test it before anything else here.
 3. **Widget and custom-widget destinations are not offered.** The mechanism is
    proven for both — rows 1 and 8 — but a button in those lists needs the
    destination widget's id, and for a custom widget the section's `eventName`
-   and `customWidgetId`. There is no verified way to read them from the DOM yet.
-   This is the largest remaining gap in coverage: it is what "paste a step
-   trigger onto a button" needs.
+   and `customWidgetId`. There is no verified way to read them from the DOM yet;
+   [`probes/widget-target-probe.js`](./probes/widget-target-probe.js) is the
+   hunt for them. This is the largest remaining gap in coverage: it is what
+   "paste a step trigger onto a button" needs.
 4. **A non-custom-widget event landing on a custom widget** is untested, and is
    probably the one unread branch of `validateAndRemap`. Run
    `await __grep(["triggerToPaste"], 2500)` and test it before offering custom
