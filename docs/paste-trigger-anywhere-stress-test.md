@@ -78,10 +78,13 @@ Two known-good behaviours, not bugs, so don't report them as such:
   and carries no label. It lands on a generic widget event and Tulip re-derives
   the right one. Correct by that route.
 
-One expected refusal: **Machines & devices with no existing trigger in that
-section** should say "Needs an existing device trigger" and paste nothing —
-there is no way to invent a real driver/event pairing. If that section does have
-a trigger, the paste should borrow its device output.
+**Machines & devices** is the one destination whose paste is deliberately
+incomplete: it arrives with the device pickers **unset** for the user to choose.
+Check three things there — that the paste is accepted at all (empty-string args
+have never been through the server), that the editor lets you pick a driver and
+device output, and that switching the When to a machine works from the same
+editor. It should not refuse, and it should not arrive pointing at some other
+trigger's device.
 
 ## Procedure
 

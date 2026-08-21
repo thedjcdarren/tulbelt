@@ -729,14 +729,22 @@ work yet:
    note Tulip enforces a 30-second floor). The pasted trigger opens with the
    destination's When already set, keeps its action, and is auto-named
    `(Copy)`.
-2. **Machines & devices sends a borrowed device output — untested.** The first
+2. **Machines & devices pastes with the device unset — untested.** The first
    attempt sent `args: {}` and was refused by Tulip's own clipboard codec
    ("Clipboard content was not valid AppClipboardContent") before any request:
-   the args are an **intersection**, so `driver` and `event` are both required.
-   It now borrows a real pairing from a trigger already in that section, read
-   out of the section's React props, and reports "Needs an existing device
-   trigger" when the section is empty rather than sending something invalid.
-   Neither path has been tested yet.
+   the args are an **intersection**, so the `driver` and `event` keys are both
+   required. But required *keys* is not the same as meaningful values — both are
+   string codecs, and `""` is a string — so `{ driver: "", event: "" }` should
+   validate where an empty object did not, and leave the pickers blank for the
+   user to fill in.
+
+   That is better than the alternative it replaced (borrowing the pairing from
+   another trigger in the section), which produced a valid trigger pointing at
+   *some other device* — wrong in a way the user might not notice, and useless
+   when the section is empty. An unset picker is visibly unfinished. The
+   step-level When also spans device and machine, so a user who meant a machine
+   trigger can switch there. Untested: whether the server accepts empty strings,
+   and how the editor renders them.
    **Built-in components need only `widgetId`, whatever their type.** Tulip's
    own paste path re-derives the event type for a component destination — it
    remaps a `button-press` onto whatever the target component actually fires —

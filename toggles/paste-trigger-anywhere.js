@@ -29,12 +29,10 @@
 // Tulip's own "+". That panel names no event, which is exactly right: it pastes
 // as a generic widget event and Tulip re-derives the component's real one.
 //
-// "Machines & devices" is the one destination that cannot be built from the
-// copied trigger alone: its event names a real driver and device event, and
-// Tulip's codec requires both. So the main-world half borrows that pairing from
-// a trigger already in the section and the user re-points it in the editor;
-// where the section is empty, the button says so rather than sending a payload
-// the codec will reject.
+// "Machines & devices" pastes with its device pickers unset, for the user to
+// choose in the editor that opens — Tulip's codec wants the `driver` and
+// `event` KEYS present, not meaningful values, so an empty pairing validates
+// where an empty object does not.
 
 (() => {
   const { addedNodesObserver, ensureStyles, removeStyles } = window.__tulbeltLib;
