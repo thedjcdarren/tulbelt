@@ -4,6 +4,7 @@ import {
   getToggles,
   setDeveloperMode,
   setToggle,
+  setToggles,
 } from "./features.js";
 
 const DEV_MODE_CLICKS = 5;
@@ -145,6 +146,33 @@ function buildPopupFeatures(toggles, showDeveloperFeatures) {
   return items;
 }
 
+function visibleFeatureNodes(list) {
+  return [...list.querySelectorAll(".feature")].filter((node) => !node.hidden);
+}
+
+// Bulk actions act on the rows the list is showing, so under an active search
+// they hit the matches only — and they can never reach a developer-only feature
+// that isn't rendered.
+function setAllVisible(list, enabled) {
+  const updates = {};
+  for (const node of visibleFeatureNodes(list)) {
+    node.querySelector("input").checked = enabled;
+    updates[node.dataset.featureId] = enabled;
+  }
+  return setToggles(updates);
+}
+
+// Say "matches" while a search is narrowing the list, so the links never claim
+// to cover more than they do.
+function syncBulkActions(list, query, buttons) {
+  const matching = query.trim() !== "";
+  const none = visibleFeatureNodes(list).length === 0;
+  buttons.selectAll.textContent = matching ? "Select matches" : "Select all";
+  buttons.unselectAll.textContent = matching ? "Unselect matches" : "Unselect all";
+  buttons.selectAll.disabled = none;
+  buttons.unselectAll.disabled = none;
+}
+
 function filterFeatures(query, list, noResults) {
   const q = query.trim().toLowerCase();
   let visibleFeatures = 0;
@@ -205,11 +233,23 @@ async function render() {
   const list = document.getElementById("toggles");
   const search = document.getElementById("feature-search");
   const noResults = document.getElementById("no-results");
+  const bulkButtons = {
+    selectAll: document.getElementById("select-all"),
+    unselectAll: document.getElementById("unselect-all"),
+  };
 
   setDeveloperModeSubtitle(developerMode);
   list.replaceChildren(...buildPopupFeatures(toggles, developerMode));
 
-  search.addEventListener("input", () => filterFeatures(search.value, list, noResults));
+  const applyFilter = () => {
+    filterFeatures(search.value, list, noResults);
+    syncBulkActions(list, search.value, bulkButtons);
+  };
+
+  search.addEventListener("input", applyFilter);
+  bulkButtons.selectAll.addEventListener("click", () => setAllVisible(list, true));
+  bulkButtons.unselectAll.addEventListener("click", () => setAllVisible(list, false));
+  syncBulkActions(list, search.value, bulkButtons);
 
   document.addEventListener("scroll", hideTooltip, true);
 
@@ -226,7 +266,7 @@ async function render() {
     setDeveloperModeSubtitle(enabled);
     const nextToggles = await getToggles();
     list.replaceChildren(...buildPopupFeatures(nextToggles, enabled));
-    filterFeatures(search.value, list, noResults);
+    applyFilter();
   });
 }
 

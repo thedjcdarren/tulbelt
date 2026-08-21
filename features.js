@@ -327,9 +327,15 @@ export async function seedDefaults() {
   if (changed) await chrome.storage.local.set({ [STORAGE_KEY]: next });
 }
 
-export async function setToggle(id, enabled) {
+// One read-modify-write for the whole batch, so flipping many toggles at once
+// fires a single storage.onChanged for content scripts to re-sync from.
+export async function setToggles(updates) {
   const { [STORAGE_KEY]: stored = {} } = await chrome.storage.local.get(STORAGE_KEY);
   await chrome.storage.local.set({
-    [STORAGE_KEY]: { ...stored, [id]: enabled },
+    [STORAGE_KEY]: { ...stored, ...updates },
   });
+}
+
+export async function setToggle(id, enabled) {
+  await setToggles({ [id]: enabled });
 }
