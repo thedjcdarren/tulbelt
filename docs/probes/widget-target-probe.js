@@ -51,21 +51,35 @@
     return (t && (t.displayName || t.name)) || "?";
   }
 
-  // A shallow, readable view of a props object: scalar values for the keys we
-  // care about, plus a shape hint for objects/arrays.
+  // Tulip ids are Meteor-style: 17 characters of mixed-case alphanumerics.
+  // Matching on the SHAPE of the value rather than on a key name is what keeps
+  // this general — the toggle has to work for widget types nobody has built
+  // yet, so a prop called something unexpected still has to be found.
+  const ID_SHAPED = /^[A-Za-z0-9]{17}$/;
+
+  // A shallow, readable view of a props object: the keys we're hunting for by
+  // name, plus anything whose value looks like an id, plus a shape hint for
+  // objects and arrays.
   function summarize(props) {
     const out = {};
     if (!props || typeof props !== "object") return out;
     for (const key of Object.keys(props)) {
-      if (!INTERESTING.test(key)) continue;
       const value = props[key];
       if (value == null) continue;
-      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-        out[key] = value;
+      const named = INTERESTING.test(key);
+      if (typeof value === "string") {
+        if (named || ID_SHAPED.test(value)) out[key] = value;
+      } else if (typeof value === "number" || typeof value === "boolean") {
+        if (named) out[key] = value;
       } else if (Array.isArray(value)) {
-        out[key] = "[" + value.length + "] " + JSON.stringify(value.slice(0, 3)).slice(0, 300);
+        if (named) out[key] = "[" + value.length + "] " + JSON.stringify(value.slice(0, 3)).slice(0, 400);
       } else if (typeof value === "object") {
-        out[key] = JSON.stringify(value).slice(0, 300);
+        const nested = JSON.stringify(value);
+        // Keep an unnamed object only when it carries an id-shaped value —
+        // that is how an event descriptor or a widget model announces itself.
+        if (named || (nested && /"[A-Za-z0-9]{17}"/.test(nested))) {
+          out[key] = nested.slice(0, 400);
+        }
       }
     }
     return out;
@@ -133,8 +147,11 @@
     }
 
     // 4. the trigger list sections in the context pane
+    // Every section, not a sample: a custom widget declaring several events
+    // renders one section per event, and each one needs its own eventName.
     const groups = [...document.querySelectorAll('[class*="triggerGroupStyles"]')];
-    report.found.triggerGroups = groups.slice(0, 8).map((group) => {
+    report.found.triggerGroupCount = groups.length;
+    report.found.triggerGroups = groups.map((group) => {
       const heading = group.querySelector('[class*="triggerHeaderLabel"]');
       return {
         heading: heading ? heading.textContent.trim() : null,

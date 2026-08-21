@@ -671,6 +671,17 @@ way, in priority order:
    makes every arg optional, so a trigger arriving from another surface is sent
    with `args: {}` for the user to fill in. That empty-args path has never been
    through the server. Test it before anything else here.
+   **Built-in components need only `widgetId`, whatever their type.** Tulip's
+   own paste path re-derives the event type for a component destination — it
+   remaps a `button-press` onto whatever the target component actually fires —
+   so one code path covers every built-in component type, including ones that
+   ship in later Tulip releases. Custom widgets are the exception, because Tulip
+   refuses to guess among the events a widget declares: each section's own
+   `eventName` has to be read from the page, and a widget declaring three events
+   renders three sections needing three different values. Nothing about either
+   case can be keyed to a widget type or a heading string — two different custom
+   widget types were observed sharing an identical `eventName` id.
+
 3. **Widget and custom-widget destinations are not offered.** The mechanism is
    proven for both — rows 1 and 8 — but a button in those lists needs the
    destination widget's id, and for a custom widget the section's `eventName`
