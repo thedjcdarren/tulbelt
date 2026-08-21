@@ -14,19 +14,9 @@ featureTemplate.innerHTML = `
   <li class="feature">
     <label>
       <span class="feature-name"></span>
-      <span class="feature-controls">
-        <button type="button" class="feature-info" aria-controls="tooltip" aria-expanded="false">
-          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-            <path
-              fill="currentColor"
-              d="M8 1.25a6.75 6.75 0 1 1 0 13.5 6.75 6.75 0 0 1 0-13.5Zm0 1.3a5.45 5.45 0 1 0 0 10.9 5.45 5.45 0 0 0 0-10.9ZM8 4.1a.9.9 0 1 1 0 1.8.9.9 0 0 1 0-1.8Zm-.75 2.85h1.5v4.7h-1.5v-4.7Z"
-            />
-          </svg>
-        </button>
-        <span class="switch">
-          <input type="checkbox" />
-          <span class="slider"></span>
-        </span>
+      <span class="switch">
+        <input type="checkbox" />
+        <span class="slider"></span>
       </span>
     </label>
   </li>
@@ -40,9 +30,6 @@ sectionTemplate.innerHTML = `
 const tooltip = document.getElementById("tooltip");
 const SHOW_DELAY_MS = 150;
 let showTimer = null;
-// The info button whose tooltip is pinned open by a click, if any. A pinned
-// tooltip stays put until it, its button, or anything outside is clicked.
-let pinnedAnchor = null;
 
 function positionTooltip(anchor) {
   const rect = anchor.getBoundingClientRect();
@@ -66,60 +53,27 @@ function positionTooltip(anchor) {
   }
 }
 
-function revealTooltip(text, anchor) {
-  tooltip.textContent = text;
-  tooltip.hidden = false;
-  positionTooltip(anchor);
-}
-
 function showTooltip(text, anchor) {
-  if (pinnedAnchor) return;
   clearTimeout(showTimer);
-  if (!tooltip.hidden) revealTooltip(text, anchor);
-  else showTimer = setTimeout(() => revealTooltip(text, anchor), SHOW_DELAY_MS);
+  const reveal = () => {
+    tooltip.textContent = text;
+    tooltip.hidden = false;
+    positionTooltip(anchor);
+  };
+  if (!tooltip.hidden) reveal();
+  else showTimer = setTimeout(reveal, SHOW_DELAY_MS);
 }
 
 function hideTooltip() {
   clearTimeout(showTimer);
   tooltip.hidden = true;
-  tooltip.classList.remove("pinned");
-  if (pinnedAnchor) {
-    pinnedAnchor.setAttribute("aria-expanded", "false");
-    pinnedAnchor = null;
-  }
 }
 
-function hideHoverTooltip() {
-  if (pinnedAnchor) return;
-  hideTooltip();
-}
-
-function toggleTooltip(text, anchor) {
-  const wasOpen = pinnedAnchor === anchor;
-  hideTooltip();
-  if (wasOpen) return;
-  pinnedAnchor = anchor;
-  anchor.setAttribute("aria-expanded", "true");
-  tooltip.classList.add("pinned");
-  revealTooltip(text, anchor);
-}
-
-function bindHoverTooltip(anchor, text) {
-  anchor.addEventListener("mouseenter", () => showTooltip(text, anchor));
-  anchor.addEventListener("mouseleave", hideHoverTooltip);
-  anchor.addEventListener("focusin", () => showTooltip(text, anchor));
-  anchor.addEventListener("focusout", hideHoverTooltip);
-}
-
-function bindInfoButton(button, name, description) {
-  button.setAttribute("aria-label", `About ${name}`);
-  button.addEventListener("click", (event) => {
-    // Keep the click off the surrounding label (which would flip the toggle)
-    // and off the outside-click handler that closes the tooltip.
-    event.preventDefault();
-    event.stopPropagation();
-    toggleTooltip(description, button);
-  });
+function bindTooltip(label, text) {
+  label.addEventListener("mouseenter", () => showTooltip(text, label));
+  label.addEventListener("mouseleave", hideTooltip);
+  label.addEventListener("focusin", () => showTooltip(text, label));
+  label.addEventListener("focusout", hideTooltip);
 }
 
 function createSectionNode(title, sectionId) {
@@ -131,11 +85,12 @@ function createSectionNode(title, sectionId) {
 
 function createFeatureNode(feature, enabled, sectionId) {
   const node = featureTemplate.content.firstElementChild.cloneNode(true);
+  const label = node.querySelector("label");
   node.querySelector(".feature-name").textContent = feature.name;
   node.dataset.featureId = feature.id;
   node.dataset.search = `${feature.name} ${feature.description}`.toLowerCase();
   node.dataset.section = sectionId;
-  bindInfoButton(node.querySelector(".feature-info"), feature.name, feature.description);
+  bindTooltip(label, feature.description);
   const cb = node.querySelector("input");
   cb.checked = enabled;
   cb.addEventListener("change", () => setToggle(feature.id, cb.checked));
@@ -230,16 +185,9 @@ async function render() {
   search.addEventListener("input", () => filterFeatures(search.value, list, noResults));
 
   document.addEventListener("scroll", hideTooltip, true);
-  tooltip.addEventListener("click", hideTooltip);
-  document.addEventListener("click", () => {
-    if (pinnedAnchor) hideTooltip();
-  });
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") hideTooltip();
-  });
 
   for (const link of document.querySelectorAll(".header-links a")) {
-    bindHoverTooltip(link, link.getAttribute("aria-label"));
+    bindTooltip(link, link.getAttribute("aria-label"));
     link.addEventListener("click", (e) => {
       e.preventDefault();
       hideTooltip();
