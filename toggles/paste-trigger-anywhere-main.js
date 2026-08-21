@@ -91,8 +91,10 @@
   }
 
   // Climbs from a trigger-list section, taking the first value it finds for
-  // each field. `group.types[0]` is the section's own event: a TriggerEventTypes
-  // string for a built-in section, or a custom widget's event id.
+  // each field. `group.types[0]` is the section's own event: an underscore-form
+  // event name for a built-in section (see the alias table below), or a custom
+  // widget's 17-character event id. Single-event components name neither — they
+  // report `types: null` and an empty label.
   function readSection(group) {
     const found = { widgetId: null, customWidgetId: null, sectionEvent: null };
     let fiber = fiberOf(group);
@@ -123,12 +125,31 @@
     return found;
   }
 
-  // Built-in component sections, by the label Tulip puts on them. Used only
-  // when the section's React props don't name their own event type: the
-  // built-in event vocabulary is closed and these are Tulip's own labels for
-  // it, so this is a narrow, checkable fallback rather than a general rule.
-  // (Custom widgets never come through here — their event is an id that no
-  // label could supply, and a section that can't produce one pastes nothing.)
+  // Tulip names widget events TWICE, in two spellings that are not mechanically
+  // related. A trigger list section says `input_enter`; the same event in a
+  // clipboard payload is `enter-press`. Most pairs differ only by the separator
+  // (`input_exit` / `input-exit`), but that one does not — so a blanket
+  // underscore-to-hyphen swap would invent `input-enter`, which is not an event
+  // at all. Irregular pairs are listed; regular ones are converted and then
+  // CHECKED against the payload vocabulary, so a wrong guess can never be sent —
+  // it just falls through to the label fallback below.
+  const SECTION_TYPE_ALIASES = { input_enter: "enter-press" };
+
+  function eventTypeFromSection(sectionEvent) {
+    if (!sectionEvent) return null;
+    if (EVENT_CLASS[sectionEvent] === "widget") return sectionEvent;
+    const alias = SECTION_TYPE_ALIASES[sectionEvent];
+    if (alias) return alias;
+    const normalized = sectionEvent.replace(/_/g, "-");
+    return EVENT_CLASS[normalized] === "widget" ? normalized : null;
+  }
+
+  // Built-in component sections, by the label Tulip puts on them. A secondary
+  // route, for a section that doesn't name its event type at all: the built-in
+  // event vocabulary is closed and these are Tulip's own labels for it, so this
+  // is narrow and checkable rather than a general rule. (Custom widgets never
+  // come through here — their event is an id that no label could supply, and a
+  // section that can't produce one pastes nothing.)
   const WIDGET_HEADINGS = {
     "on enter press": "enter-press",
     "on input exit": "input-exit",
@@ -240,10 +261,12 @@
     // named exactly — a generic widget event would be re-derived by Tulip into
     // whichever event that component treats as its default, landing the trigger
     // in the wrong section.
-    let type = sectionEvent && EVENT_CLASS[sectionEvent] === "widget" ? sectionEvent : null;
+    let type = eventTypeFromSection(sectionEvent);
     if (!type) type = typeFromHeading(group);
-    // Only when neither says which: fall back to a generic widget event and let
-    // Tulip choose. Right for a single-event component, a guess for any other.
+    // Neither says which. A single-event component — a button, an interactive
+    // table — names no type and carries no label, so this is the normal path
+    // for those: any widget-class event will do, because Tulip re-derives the
+    // one event that component actually fires.
     if (!type) type = "button-press";
     return { type, opts: { widgetId, stepId } };
   }

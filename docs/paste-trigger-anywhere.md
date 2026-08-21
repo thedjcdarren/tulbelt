@@ -663,6 +663,50 @@ survives a reload, and a custom-widget trigger can move to a **different**
 custom widget type. There is no second gate at Save because there is no Save —
 the record is created by the paste itself.
 
+## Two vocabularies for the same events
+
+Worth knowing before touching anything that reads an event type: Tulip names
+widget events **twice**, and the spellings are not mechanically related.
+
+| Trigger list section (`group.types[0]`) | Clipboard payload (`event.type`) |
+| --------------------------------------- | -------------------------------- |
+| `input_enter`                            | `enter-press`                    |
+| `input_exit`                             | `input-exit`                     |
+
+Most pairs differ only by the separator; `input_enter` does not. So a section's
+event type cannot be used as a payload event type without translation, and a
+blanket underscore-to-hyphen swap invents `input-enter`, which is not an event
+at all. The toggle lists the irregular pair, converts the regular ones, and
+then **checks the result against the payload vocabulary** — an unknown spelling
+falls through rather than being sent.
+
+This cost a round: the section's type was being read correctly, failing the
+lookup, and being silently discarded, so a trigger pasted at "On input exit"
+landed in "On enter press". The underscore spellings for `input-change`,
+`row-select`, `signature-complete` and `button-press` have not been observed —
+those widgets are single-section wherever they were checked — so if one of them
+turns out to be irregular too, it will present the same way.
+
+Single-event components (button, interactive table) name no type and carry no
+label: they report `types: null` and an empty heading. They land on a generic
+widget event and Tulip re-derives the one event they fire, which is correct, but
+by that route rather than by being named.
+
+## The When dropdown is Tulip's, not ours
+
+After any paste onto a widget, the trigger editor's **When** dropdown lists the
+full cross-widget event vocabulary — a text input is offered "signature is
+completed", "a row is selected" and "Custom Widget event occurs", none of which
+it can fire. **A native Ctrl+V paste produces the identical list**, while a
+trigger created normally in that widget offers only its own events. So both
+paste paths widen it and Tulip's own is one of them; this is not something the
+toggle causes or should correct.
+
+At step level the same breadth is legitimate: a step trigger's When spans
+device / timer / machine / step opened / step closed, and changing it genuinely
+moves the trigger between the Timers, Machines & devices and On step exit
+sections.
+
 ## Remaining coverage
 
 The toggle ships `developerOnly: true` while these are finished. None of them is

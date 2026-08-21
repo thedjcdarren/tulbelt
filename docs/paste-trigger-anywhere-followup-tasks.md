@@ -37,114 +37,66 @@ You will need a widget with **two or more trigger sections** — a text input ha
 
 ---
 
-## Bug 1 — a multi-section widget pastes into the wrong section
+## Bug 1 — a multi-section widget pasted into the wrong section — FIXED
 
-**Reported:** clicking the paste icon beside "On input exit" put the trigger in
-"On enter press".
+**Was:** clicking the paste icon beside "On input exit" put the trigger in "On
+enter press".
 
-**Suspected cause:** the section's own event type is what separates two sections
-on one widget. It is confirmed present in React props for a *custom* widget
-(`props.group.types[0]`) but was never confirmed for a *built-in* one. Where it
-is missing, the code fell back to a generic widget event and Tulip re-derived
-that into the component's default event — the first section. A fallback that
-reads Tulip's own label for the section has been added; this is to confirm it
-fires and that the type survives.
+**Cause — two vocabularies.** Tulip names widget events twice, and the two
+spellings are not mechanically related:
 
-**There is a second possible cause** that the fix would not touch: Tulip's paste
-path re-derives `event.type` itself when the source event doesn't suit the
-destination. If it overrides ours regardless, the label fix changes nothing and
-the real lever is elsewhere. The debug output tells these apart.
+| Trigger list section (`group.types[0]`) | Clipboard payload (`event.type`) |
+| --------------------------------------- | -------------------------------- |
+| `input_enter`                            | `enter-press`                    |
+| `input_exit`                             | `input-exit`                     |
 
-Steps:
+The section **did** name its own event; the code looked it up in the payload
+vocabulary, found nothing, and silently discarded it — then fell back to a
+generic widget event, which Tulip re-derived into the component's default: the
+first section. A value that was present and thrown away, not a value that was
+missing.
 
-1. Copy any trigger (a button trigger is fine).
-2. Select a text input so its panel shows both sections.
-3. Click the paste icon beside **On input exit**.
-4. Capture the `[tulbelt:pta]` console lines — they show the section props read,
-   the destination resolved, and the exact `event` sent.
-5. Note which section the new trigger actually landed in, and what the editor's
-   **When** shows.
-6. Repeat with the icon beside **On enter press** — that one is expected to work
-   either way, and is the control.
+Note `input_enter` → `enter-press`, not `input-enter`. A blanket
+underscore-to-hyphen swap invents an event that does not exist, so the fix
+lists the irregular pair and converts the regular ones **then checks the result
+against the payload vocabulary** — a wrong guess can never be sent.
 
-Report per attempt: the debug lines, the section it landed in, the When shown.
+**Ruled out:** Tulip does not override the type. Dispatching a hand-built
+payload with `event.type: "input-exit"` landed the trigger in On input exit,
+with the editor showing "input is exited", and it survived a reload.
 
-- Sent `input-exit` and landed in On input exit → **fixed**.
-- Sent `input-exit` but landed in On enter press → **Tulip overrides the type**;
-  the `group prop` line in the debug output is the next lead, so include it in
-  full.
-- Sent `button-press` → the label fallback didn't fire; include the `section
-  props` line.
+**Also learned:** single-event built-ins (button, interactive table) report
+`types: null` and an empty label, so neither the primary path nor the label
+fallback fires for them. They land on the generic widget event and Tulip
+re-derives the one event they fire — correct, but by that route rather than by
+being named.
 
----
+## Bug 2 — the When dropdown offers events from other surfaces — NOT OURS
 
-## Bug 2 — the When dropdown offers events from other surfaces
+The control settled it. Pasting the same button trigger onto a text input, the
+When dropdown offered eight entries — including "signature is completed", "a row
+is selected" and "Custom Widget event occurs", none of which a text input can
+fire — and **a native Ctrl+V paste produced the identical eight**. A trigger
+created normally in that widget offers only its own two.
 
-**Reported:** after a paste, the trigger editor's **When** dropdown is populated
-with entries belonging to other trigger locations that don't apply where the
-trigger landed.
+So both paste paths widen the list to the full cross-widget vocabulary, and
+Tulip's own is one of them. The toggle is not causing it and should not try to
+correct it.
 
-**Suspected cause:** `event.id` names an event *slot*, and a rewritten payload
-carries the **source's** slot id — the toggle deliberately leaves it alone,
-because the server accepts it and re-IDs the trigger itself. The editor may
-populate its When list from that id, in which case it is listing the source
-surface's events.
+One nuance worth keeping: at **step** level a spanning list is legitimate. A
+native step-enter trigger offers device, timer, machine, step opened and step
+closed — all step-class — and changing the When genuinely moves the trigger
+between the Timers / Machines & devices / On step exit sections. This only reads
+as a bug in the widget case.
 
-### 2a. Is it ours at all? (do this first)
+## If more browser work is needed
 
-The control matters more than the experiments: **does a native Tulip paste show
-the same thing?**
+The setup above still applies. Worth knowing for the next round:
 
-1. Copy a widget trigger, select a *different* widget of the same kind, press
-   Ctrl/Cmd+V — Tulip's own path, no Tulbelt involvement.
-2. When the editor opens, screenshot the When dropdown **open**.
-3. Do the same for a native step-trigger paste (copy an On step enter trigger,
-   Ctrl+V with the step open).
-
-If the native paste shows the same extra entries, this is Tulip's own behaviour
-and the toggle is not causing it — say so and stop; the rest is unnecessary.
-
-### 2b. Which id drives the list?
-
-Only if 2a shows native pastes are clean. Use
-[`probes/paste-rewrite-test.js`](./probes/paste-rewrite-test.js) (paste it in
-the page console) — its `tryAs` now takes an `eventId`:
-
-```js
-__pasteTest.arm()                       // click copy on a step trigger
-// then, with the target widget selected:
-await __pasteTest.tryAs('button-press', { widgetId: '<target>' })                        // A: source's slot id (current behaviour)
-await __pasteTest.tryAs('button-press', { widgetId: '<target>', eventId: 'random' })     // B: a fresh id
-await __pasteTest.tryAs('button-press', { widgetId: '<target>', eventId: '<dest slot>' })// C: the destination's own slot id
-```
-
-For **C**, get `<dest slot>` by copying a trigger that already lives in the
-destination section and reading `event.id` from `__pasteTest.show()`.
-
-After each, open the created trigger and screenshot the **When** dropdown open.
-Report which of A / B / C produce a clean list, and whether each trigger still
-saves and works.
-
-`event.id` cannot simply be omitted — Tulip's codec requires the key — so those
-three are the whole space.
-
-### 2c. Does it matter?
-
-Whichever id is used, check once whether the pollution is cosmetic or real:
-
-1. Leave the pasted trigger's When as the editor set it, save, and run the app.
-   **Does it fire on the right event?** (Bad entries in a dropdown you don't
-   touch may be harmless.)
-2. Pick one of the foreign entries, save, and see whether Tulip accepts it or
-   errors. Don't keep that trigger.
-
----
-
-## Reporting back
-
-For each bug: what you did, what happened, the exact console lines and the error
-text of anything refused. Screenshots of the open When dropdown are the evidence
-for bug 2 — the description "artifacts from other trigger locations" needs to
-become a list of specific entries.
-
-Then say plainly for each: fixed, still broken, or not ours.
+- **Check the loaded build first.** A previous round tested a stale build; the
+  giveaway was that `window.__ptaDebug = true` produced no `[tulbelt:pta]` lines
+  at all, since the debug path and the fix shipped in the same commit. Reload
+  the extension *and* the tab after pulling.
+- **The When control is a native `<select>`**, so its open popup is OS-drawn and
+  never appears in a page screenshot. Temporarily setting `size=8` on the select
+  renders the options inline where they can be captured.
