@@ -235,8 +235,8 @@ async function render() {
   };
 
   search.addEventListener("input", applyFilter);
-  bulkActions.querySelector("#select-all").addEventListener("click", () => setAll(list, true));
-  bulkActions.querySelector("#unselect-all").addEventListener("click", () => setAll(list, false));
+  bulkActions.querySelector("#all-on").addEventListener("click", () => setAll(list, true));
+  bulkActions.querySelector("#all-off").addEventListener("click", () => setAll(list, false));
   syncBulkActions(bulkActions, search.value);
 
   document.addEventListener("scroll", hideTooltip, true);

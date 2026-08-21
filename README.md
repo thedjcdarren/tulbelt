@@ -18,8 +18,8 @@ each one a self-contained tweak to the Tulip web UI.
 ## What it does
 
 Open the toolbar popup to see every available toggle; hover the **i** beside a
-switch for its description, and use **Select all** / **Unselect all** above the
-list to flip everything at once. A few examples of what's in there:
+switch for its description, and use **All On** / **All Off** above the list to
+flip everything at once. A few examples of what's in there:
 
 - **Sort tables by newest** — opens table views sorted by `_createdAt` desc.
 - **Dark mode** — a filter-inversion dark theme for tulip.co.
