@@ -219,6 +219,7 @@ ul#toggles::-webkit-scrollbar-thumb {
 }
 
 .feature-name {
+  flex: 1;
   min-width: 0;
   font-size: 12.5px;
   font-weight: 500;
@@ -226,6 +227,39 @@ ul#toggles::-webkit-scrollbar-thumb {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Info button + toggle, kept together at the right edge of the row */
+.feature-controls {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+}
+
+.feature-info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+
+.feature-info:hover,
+.feature-info[aria-expanded="true"] {
+  color: var(--accent);
+}
+
+.feature-info:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .switch {
@@ -287,4 +321,10 @@ ul#toggles::-webkit-scrollbar-thumb {
   border-radius: 4px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
   pointer-events: none;
+}
+
+/* Click-opened tooltips are dismissible by clicking them */
+.tooltip.pinned {
+  pointer-events: auto;
+  cursor: pointer;
 }
